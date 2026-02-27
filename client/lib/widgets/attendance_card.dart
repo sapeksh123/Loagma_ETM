@@ -388,6 +388,8 @@ class _AttendanceCardState extends State<AttendanceCard> {
     }
 
     final workDuration = _formatDuration(workSeconds);
+    final totalBreakDuration =
+        _formatDuration(_summary?['break_duration_seconds']);
 
     final isWorking = _status == 'working' || _status == 'on_break';
     final buttonLabel = isWorking ? 'Punch Out' : 'Punch In';
@@ -431,7 +433,14 @@ class _AttendanceCardState extends State<AttendanceCard> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       _infoChip(Icons.login, 'Punch In', punchInTime),
-                      _infoChip(Icons.timer, 'Duration', workDuration),
+                      _infoChip(Icons.timer, 'Work', workDuration),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      _infoChip(Icons.work_history, 'Breaks', totalBreakDuration),
                     ],
                   ),
                   const SizedBox(height: 12),

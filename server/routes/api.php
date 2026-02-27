@@ -7,6 +7,7 @@ use App\Http\Controllers\RoleController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\DashboardController;
 
 Route::get('/health', function () {
     return response()->json([
@@ -49,7 +50,11 @@ Route::patch('/tasks/{id}/status', [TaskController::class, 'updateStatus']);
 
 // Attendance Routes
 Route::get('/attendance/today', [AttendanceController::class, 'today']);
+Route::get('/attendance/overview', [AttendanceController::class, 'overview']);
 Route::post('/attendance/punch-in', [AttendanceController::class, 'punchIn']);
 Route::post('/attendance/punch-out', [AttendanceController::class, 'punchOut']);
 Route::post('/attendance/break/start', [AttendanceController::class, 'startBreak']);
 Route::post('/attendance/break/end', [AttendanceController::class, 'endBreak']);
+
+// Dashboard summary
+Route::get('/dashboard/summary', [DashboardController::class, 'summary']);

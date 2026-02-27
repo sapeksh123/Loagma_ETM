@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../widgets/app_drawer.dart';
+import '../../services/dashboard_service.dart';
 import 'employees_screen.dart';
 import 'tasks_screen.dart';
+import 'attendance_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
@@ -13,6 +15,12 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
 
+  bool _isStatsLoading = true;
+  int _totalEmployees = 0;
+  int _activeEmployees = 0;
+  int _pendingTasks = 0;
+  int _presentToday = 0;
+
   final List<String> _menuTitles = [
     'Dashboard',
     'Employees',
@@ -21,6 +29,48 @@ class _AdminDashboardState extends State<AdminDashboard> {
     'Reports',
     'Settings',
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDashboardStats();
+  }
+
+  int _asInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  Future<void> _loadDashboardStats() async {
+    setState(() {
+      _isStatsLoading = true;
+    });
+    try {
+      final response = await DashboardService.getSummary();
+      if (response['status'] == 'success') {
+        final data =
+            (response['data'] as Map<String, dynamic>?) ?? <String, dynamic>{};
+        setState(() {
+          _totalEmployees = _asInt(data['employees_total']);
+          _activeEmployees = _asInt(data['employees_active']);
+          _pendingTasks = _asInt(data['tasks_pending']);
+          _presentToday = _asInt(data['present_today']);
+          _isStatsLoading = false;
+        });
+      } else {
+        setState(() {
+          _isStatsLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isStatsLoading = false;
+      });
+    }
+  }
 
   Widget _getSelectedScreen() {
     switch (_selectedIndex) {
@@ -203,7 +253,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   'Employees',
                   Icons.people_outline,
                   Colors.blue,
-                  '24 Active',
+                  _isStatsLoading
+                      ? 'Loading...'
+                      : '${_activeEmployees > 0 ? _activeEmployees : _totalEmployees} Active',
                   () {
                     setState(() => _selectedIndex = 1);
                   },
@@ -213,7 +265,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   'Tasks',
                   Icons.task_alt,
                   Colors.orange,
-                  '48 Pending',
+                  _isStatsLoading ? 'Loading...' : '$_pendingTasks Pending',
                   () {
                     setState(() => _selectedIndex = 2);
                   },
@@ -223,7 +275,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   'Attendance',
                   Icons.access_time_outlined,
                   Colors.green,
-                  '22 Present',
+                  _isStatsLoading ? 'Loading...' : '$_presentToday Present',
                   () {
                     setState(() => _selectedIndex = 3);
                   },
@@ -258,21 +310,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildAttendanceScreen() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.access_time, size: 80, color: Colors.teal.shade300),
-          const SizedBox(height: 16),
-          const Text(
-            'Attendance',
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          const Text('Track employee attendance'),
-        ],
-      ),
-    );
+    return const AttendanceScreen();
   }
 
   Widget _buildReportsScreen() {

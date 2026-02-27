@@ -5,6 +5,13 @@ class AttendanceService {
     return ApiService.get('/attendance/today?user_id=$userId');
   }
 
+  // Admin overview for today's attendance (or a specific date).
+  static Future<Map<String, dynamic>> getOverview({String? date}) async {
+    final endpoint =
+        date == null ? '/attendance/overview' : '/attendance/overview?date=$date';
+    return ApiService.get(endpoint);
+  }
+
   static Future<Map<String, dynamic>> punchIn(String userId) async {
     return ApiService.post(
       '/attendance/punch-in',
