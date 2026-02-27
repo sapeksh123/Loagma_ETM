@@ -8,21 +8,24 @@ WORKDIR /app
 # Copy only composer files first to leverage Docker layer caching
 COPY composer.json composer.lock* ./
 
+# First install without running composer scripts (no artisan yet)
 RUN composer install \
     --no-dev \
     --no-interaction \
     --no-progress \
+    --no-scripts \
     --prefer-dist
 
-# Copy the rest of the application code
+# Copy the rest of the application code (artisan etc.)
 COPY . .
 
-# Re-run in case new packages were added in copied files (optional but safe)
+# Re-run install so composer scripts can run now that artisan exists
 RUN composer install \
     --no-dev \
     --no-interaction \
     --no-progress \
-    --prefer-dist
+    --prefer-dist \
+    --optimize-autoloader
 
 
 ## Stage 2: Runtime image
