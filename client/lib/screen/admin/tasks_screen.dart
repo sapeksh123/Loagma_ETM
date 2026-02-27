@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/task_service.dart';
+import '../../services/user_service.dart';
 import '../../models/task_model.dart';
 import 'create_task_screen.dart';
 
@@ -19,10 +20,220 @@ class _TasksScreenState extends State<TasksScreen> {
   String? _errorMessage;
   String _selectedFilter = 'all';
 
+  // Admin-specific state
+  String _viewMode = 'self'; // 'self' or 'employee'
+  List<Map<String, dynamic>> _employees = [];
+  bool _isEmployeesLoading = false;
+  String? _selectedEmployeeId;
+  String? _selectedEmployeeName;
+
   @override
   void initState() {
     super.initState();
+    // Default to self-view; employees don't see extra options
+    _viewMode = 'self';
     _fetchTasks();
+    if (widget.userRole == 'admin') {
+      _loadEmployees();
+    }
+  }
+
+  Widget _buildAdminModeSelector() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'View tasks as',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _buildModeButton(
+                  label: 'Self Tasks',
+                  isSelected: _viewMode == 'self',
+                  onTap: () {
+                    if (_viewMode == 'self') return;
+                    setState(() {
+                      _viewMode = 'self';
+                    });
+                    _fetchTasks();
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildModeButton(
+                  label: 'Employee Tasks',
+                  isSelected: _viewMode == 'employee',
+                  onTap: () {
+                    if (_viewMode == 'employee') return;
+                    setState(() {
+                      _viewMode = 'employee';
+                    });
+                    _fetchTasks();
+                  },
+                ),
+              ),
+            ],
+          ),
+          if (_viewMode == 'employee') ...[
+            const SizedBox(height: 10),
+            _buildEmployeeSelector(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeButton({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(30),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFFceb56e) : Colors.white,
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: const Color(0xFFceb56e),
+            width: 1.2,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: isSelected ? Colors.white : const Color(0xFFceb56e),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmployeeSelector() {
+    if (_isEmployeesLoading) {
+      return Row(
+        children: const [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 8),
+          Text(
+            'Loading employees...',
+            style: TextStyle(fontSize: 12),
+          ),
+        ],
+      );
+    }
+
+    if (_employees.isEmpty) {
+      return const Text(
+        'No employees found.',
+        style: TextStyle(fontSize: 12, color: Colors.redAccent),
+      );
+    }
+
+    final selectedText = _selectedEmployeeName ??
+        'Select employee (${_employees.length} available)';
+
+    return OutlinedButton.icon(
+      onPressed: () async {
+        final result = await showModalBottomSheet<Map<String, dynamic>>(
+          context: context,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+          builder: (context) {
+            return SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Choose Employee',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: _employees.length,
+                      itemBuilder: (context, index) {
+                        final emp = _employees[index];
+                        final code = emp['employeeCode'] as String? ?? '';
+                        final name = emp['name'] as String? ?? 'Unknown';
+                        final subtitle =
+                            code.isNotEmpty ? 'Code: $code' : null;
+                        return ListTile(
+                          title: Text(name),
+                          subtitle:
+                              subtitle != null ? Text(subtitle) : null,
+                          onTap: () {
+                            Navigator.pop(context, emp);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+
+        if (result != null && mounted) {
+          setState(() {
+            _selectedEmployeeId = result['id'] as String?;
+            _selectedEmployeeName = result['name'] as String?;
+          });
+          _fetchTasks();
+        }
+      },
+      icon: const Icon(Icons.people_alt_outlined, size: 18),
+      label: Text(
+        selectedText,
+        style: const TextStyle(fontSize: 13),
+      ),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        side: const BorderSide(color: Color(0xFFceb56e)),
+        foregroundColor: const Color(0xFFceb56e),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(30),
+        ),
+      ),
+    );
   }
 
   Future<void> _fetchTasks() async {
@@ -32,15 +243,43 @@ class _TasksScreenState extends State<TasksScreen> {
     });
 
     try {
+      // Decide which user and role to use based on current view
+      String userId = widget.userId;
+      String userRole = widget.userRole;
+
+      if (widget.userRole == 'admin' && _viewMode == 'employee') {
+        // When viewing employee tasks, require a selected employee
+        if (_selectedEmployeeId == null) {
+          setState(() {
+            _tasks = [];
+            _isLoading = false;
+          });
+          return;
+        }
+        userId = _selectedEmployeeId!;
+        userRole = 'employee';
+      }
+
       final response = await TaskService.getTasks(
-        widget.userId,
-        widget.userRole,
+        userId,
+        userRole,
       );
 
       if (response['status'] == 'success') {
         final List<dynamic> tasksData = response['data'] ?? [];
+        var tasks = tasksData.map((json) => Task.fromJson(json)).toList();
+
+        // For admin self view, show only tasks that belong to the admin
+        if (widget.userRole == 'admin' && _viewMode == 'self') {
+          tasks = tasks
+              .where((task) =>
+                  task.assignedTo == widget.userId ||
+                  task.createdBy == widget.userId)
+              .toList();
+        }
+
         setState(() {
-          _tasks = tasksData.map((json) => Task.fromJson(json)).toList();
+          _tasks = tasks;
           _isLoading = false;
         });
       } else {
@@ -94,6 +333,38 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _loadEmployees() async {
+    setState(() {
+      _isEmployeesLoading = true;
+    });
+
+    try {
+      final response = await UserService.getUsers(perPage: 100);
+      if (response['status'] == 'success') {
+        final List<dynamic> data = response['data'] ?? [];
+        setState(() {
+          _employees = data
+              .map<Map<String, dynamic>>((e) => {
+                    'id': e['id']?.toString() ?? '',
+                    'name': e['name']?.toString() ?? 'Unknown',
+                    'employeeCode': e['employeeCode']?.toString() ?? '',
+                  })
+              .where((e) => e['id'].toString().isNotEmpty)
+              .toList();
+          _isEmployeesLoading = false;
+        });
+      } else {
+        setState(() {
+          _isEmployeesLoading = false;
+        });
+      }
+    } catch (_) {
+      setState(() {
+        _isEmployeesLoading = false;
+      });
     }
   }
 
@@ -175,6 +446,7 @@ class _TasksScreenState extends State<TasksScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            if (widget.userRole == 'admin') _buildAdminModeSelector(),
             _buildFilterChips(),
             Expanded(
               child: _isLoading

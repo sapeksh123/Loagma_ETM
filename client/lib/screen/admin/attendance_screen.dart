@@ -70,6 +70,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
   }
 
+  int _asInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is double) return value.round();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
   Color _statusColor(String status) {
     switch (status) {
       case 'working':
@@ -98,23 +106,35 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   String _formatDuration(dynamic seconds) {
-    int total;
-    if (seconds == null) {
-      total = 0;
-    } else if (seconds is int) {
-      total = seconds;
-    } else if (seconds is double) {
-      total = seconds.round();
-    } else if (seconds is String) {
-      total = int.tryParse(seconds) ?? 0;
-    } else {
-      total = 0;
-    }
-
+    final total = _asInt(seconds);
     final d = Duration(seconds: total);
     final hours = d.inHours.toString().padLeft(2, '0');
     final minutes = (d.inMinutes % 60).toString().padLeft(2, '0');
     return '$hours:$minutes';
+  }
+
+  int _computeWorkSeconds(Map<String, dynamic> summary) {
+    final punchInIso = summary['punch_in_time'] as String?;
+    if (punchInIso == null || punchInIso.isEmpty) return 0;
+
+    final punchOutIso = summary['punch_out_time'] as String?;
+    DateTime punchIn;
+    DateTime end;
+    try {
+      punchIn = DateTime.parse(punchInIso).toLocal();
+      if (punchOutIso != null && punchOutIso.isNotEmpty) {
+        end = DateTime.parse(punchOutIso).toLocal();
+      } else {
+        end = DateTime.now();
+      }
+    } catch (_) {
+      return 0;
+    }
+
+    final breakSeconds = _asInt(summary['break_duration_seconds']);
+    final raw = end.difference(punchIn).inSeconds - breakSeconds;
+    if (raw < 0) return 0;
+    return raw;
   }
 
   @override
@@ -237,7 +257,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                 final summary =
                     (item['attendance'] as Map<String, dynamic>?) ?? {};
                 final status = (summary['status'] ?? 'not_punched_in').toString();
-                final work = _formatDuration(summary['work_duration_seconds']);
+                // Recompute work duration from punch in/out + breaks,
+                // so it stays correct even if stored seconds are stale.
+                final workSeconds = _computeWorkSeconds(summary);
+                final work = _formatDuration(workSeconds);
                 final breaks = _formatDuration(summary['break_duration_seconds']);
 
                 return _attendanceCard(

@@ -286,14 +286,7 @@ class _OtpScreenState extends State<OtpScreen> {
 
                         const SizedBox(height: 8),
 
-                        Text(
-                          'Master OTP: 1234',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
+                       
                       ],
                     ),
                   ),

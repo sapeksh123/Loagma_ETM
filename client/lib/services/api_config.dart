@@ -14,13 +14,13 @@ class ApiConfig {
   /// 1. Wait 30-60 seconds and retry
   /// 2. Set useProduction = false to use local backend
   /// 3. Make sure your local backend is running on port 5000
-  static const bool useProduction = false; // Using production backend on Render
+  static const bool useProduction = true; // Using production backend on Render
 
   static String get baseUrl {
     if (useProduction) {
       // 🌍 Your live backend on Render
       // Note: If DNS fails on emulator, try restarting with: flutter run --host-vmservice-port 0
-      return 'https://loagma-crm.onrender.com/api';
+      return 'https://loagma-etm.onrender.com/api';
     } else {
       // 🧪 Local testing
       if (kIsWeb) return 'http://localhost:8000/api';
