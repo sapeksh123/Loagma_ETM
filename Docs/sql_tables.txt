@@ -1,0 +1,113 @@
+
+/// Department Table
+
+CREATE TABLE departments (
+  id VARCHAR(191) PRIMARY KEY,
+  name VARCHAR(191) NOT NULL UNIQUE,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+------------------------------------------------------------
+
+//// Role Table
+
+CREATE TABLE roles (
+  id VARCHAR(191) PRIMARY KEY,
+  name VARCHAR(191) NOT NULL UNIQUE,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+-----------------------------------------------------------------
+/// users Table
+
+ CREATE TABLE users (
+                id VARCHAR(191) PRIMARY KEY,
+                employeeCode VARCHAR(191) UNIQUE,
+                name VARCHAR(191),
+                email VARCHAR(191) UNIQUE,
+                contactNumber VARCHAR(191) NOT NULL UNIQUE,
+                alternativeNumber VARCHAR(191),
+                roleId VARCHAR(191),
+                roles JSON,
+                departmentId VARCHAR(191),
+                otp VARCHAR(191),
+                otpExpiry DATETIME,
+                lastLogin DATETIME,
+                isActive BOOLEAN NOT NULL DEFAULT TRUE,
+                createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                dateOfBirth DATETIME,
+                gender VARCHAR(50),
+                image TEXT,
+                preferredLanguages JSON,
+                address TEXT,
+                city VARCHAR(191),
+                state VARCHAR(191),
+                pincode VARCHAR(20),
+                country VARCHAR(191),
+                district VARCHAR(191),
+                area VARCHAR(191),
+                latitude DOUBLE,
+                longitude DOUBLE,
+                aadharCard VARCHAR(191),
+                panCard VARCHAR(191),
+                password VARCHAR(255),
+                notes TEXT,
+                workStartTime VARCHAR(8) DEFAULT '09:00:00',
+                workEndTime VARCHAR(8) DEFAULT '18:00:00',
+                latePunchInGraceMinutes INT DEFAULT 45,
+                earlyPunchOutGraceMinutes INT DEFAULT 30,
+                FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL,
+                FOREIGN KEY (roleId) REFERENCES roles(id) ON DELETE SET NULL
+            );
+
+
+/// Important Conversions Explained  in users table 
+-------------------------------------------------------
+Prisma	           MySQL
+------------------------------------------------------
+String	           VARCHAR(191)
+String?	           VARCHAR(191) NULL
+String[]           JSON
+Boolean	           BOOLEAN
+Float	           DOUBLE
+@default(now())	   DEFAULT CURRENT_TIMESTAMP
+@updatedAt	       ON UPDATE CURRENT_TIMESTAMP
+@unique	           UNIQUE
+
+----------------------------------------------------
+
+
+------------------------------------------------------------
+/// Tasks Table
+
+CREATE TABLE tasks (
+  id VARCHAR(191) PRIMARY KEY,
+  title VARCHAR(255) NOT NULL,
+  description TEXT,
+  category ENUM('daily', 'project', 'personal', 'family', 'other') NOT NULL,
+  priority ENUM('low', 'medium', 'high', 'critical') NOT NULL DEFAULT 'medium',
+  status ENUM('assigned', 'in_progress', 'completed', 'paused', 'need_help') NOT NULL DEFAULT 'assigned',
+  deadline_date DATE,
+  deadline_time TIME,
+  created_by VARCHAR(191) NOT NULL,
+  assigned_to VARCHAR(191) NOT NULL,
+  createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE CASCADE
+);
+
+/// Task Status Colors
+------------------------------------------------------------
+assigned      - Grey
+in_progress   - Yellow
+completed     - Green
+paused        - Orange
+need_help     - Red
+
+/// Task Categories
+------------------------------------------------------------
+daily         - Daily tasks
+project       - Project tasks (visible to admin)
+personal      - Personal tasks
+family        - Family tasks
+other         - Other tasks
