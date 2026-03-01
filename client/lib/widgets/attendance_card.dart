@@ -354,16 +354,34 @@ class _AttendanceCardState extends State<AttendanceCard> {
         _summary?['current_break'] as Map<String, dynamic>?;
     final onBreak = _status == 'on_break' && currentBreak != null;
 
+    // Current break elapsed seconds (live, so it ticks every second when on break)
+    int currentBreakElapsedSeconds = 0;
+    if (onBreak && currentBreak['started_at'] != null) {
+      final started =
+          DateTime.parse(currentBreak['started_at'] as String).toLocal();
+      currentBreakElapsedSeconds =
+          DateTime.now().difference(started).inSeconds.clamp(0, 1 << 31);
+    }
+
     final breakLabel = onBreak
         ? '${(currentBreak['type'] as String).toString().toUpperCase()} BREAK'
         : 'No active break';
     final breakDuration = onBreak
-        ? _formatDuration(currentBreak['duration_seconds'])
+        ? _formatDuration(currentBreakElapsedSeconds)
         : '--';
 
     final punchInIso = _summary?['punch_in_time'] as String?;
     final punchOutIso = _summary?['punch_out_time'] as String?;
     final punchInTime = _formatTime(punchInIso);
+
+    // Server's break_duration_seconds already includes active break at fetch time.
+    // Avoid double-counting: use completed-only as base, then add live current break.
+    final serverBreakTotal = _asInt(_summary?['break_duration_seconds']);
+    final serverActiveBreakSeconds =
+        onBreak ? _asInt(currentBreak['duration_seconds']) : 0;
+    final completedBreakSeconds =
+        (serverBreakTotal - serverActiveBreakSeconds).clamp(0, 1 << 31);
+    final totalBreakSeconds = completedBreakSeconds + currentBreakElapsedSeconds;
 
     int workSeconds = 0;
     if (punchInIso != null && punchInIso.isNotEmpty) {
@@ -372,232 +390,256 @@ class _AttendanceCardState extends State<AttendanceCard> {
       final end = punchOutIso != null && punchOutIso.isNotEmpty
           ? DateTime.parse(punchOutIso).toLocal()
           : now;
-
-      final baseBreak = _asInt(_summary?['break_duration_seconds']);
-      int extraActiveBreak = 0;
-      if (onBreak && currentBreak['started_at'] != null) {
-        final started =
-            DateTime.parse(currentBreak['started_at'] as String).toLocal();
-        final already = _asInt(currentBreak['duration_seconds']);
-        final currentTotal = now.difference(started).inSeconds;
-        extraActiveBreak = (currentTotal - already).clamp(0, 1 << 31);
-      }
-      final totalBreakSeconds = baseBreak + extraActiveBreak;
-      workSeconds =
-          (end.difference(punchIn).inSeconds - totalBreakSeconds).clamp(0, 1 << 31);
+      workSeconds = (end.difference(punchIn).inSeconds - totalBreakSeconds)
+          .clamp(0, 1 << 31);
     }
 
     final workDuration = _formatDuration(workSeconds);
-    final totalBreakDuration =
-        _formatDuration(_summary?['break_duration_seconds']);
+    final totalBreakDuration = _formatDuration(totalBreakSeconds);
 
     final isWorking = _status == 'working' || _status == 'on_break';
     final buttonLabel = isWorking ? 'Punch Out' : 'Punch In';
     final buttonIcon = isWorking ? Icons.logout : Icons.login;
     final buttonColor =
         isWorking ? Colors.red.shade600 : Colors.green.shade600;
+    final lunchBreakTaken =
+        _summary?['lunch_break_taken'] == true && !onBreak;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFceb56e), Color(0xFFd4c088)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFceb56e).withValues(alpha: 0.3),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: const Color(0xFFceb56e).withValues(alpha: 0.08),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: _isLoading
-            ? const SizedBox(
-                height: 80,
-                child: Center(
-                  child: CircularProgressIndicator(
-                    valueColor:
-                        AlwaysStoppedAnimation<Color>(Colors.white),
-                  ),
-                ),
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _infoChip(Icons.login, 'Punch In', punchInTime),
-                      _infoChip(Icons.timer, 'Work', workDuration),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      _infoChip(Icons.work_history, 'Breaks', totalBreakDuration),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    'Hi, ${widget.userName}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: _isLoading
+              ? const SizedBox(
+                  height: 80,
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Color(0xFFceb56e)),
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    _status == 'not_punched_in'
-                        ? 'Tap Punch In to start your day.'
-                        : _status == 'completed'
-                            ? 'You have completed today\'s attendance.'
-                            : onBreak
-                                ? 'On $breakLabel • $breakDuration'
-                                : 'You are currently working.',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Greeting section
+                  
+                    const SizedBox(height: 4),
+                    Text(
+                      _status == 'not_punched_in'
+                          ? 'Tap Punch In to start your day.'
+                          : _status == 'completed'
+                              ? 'You have completed today\'s attendance.'
+                              : onBreak
+                                  ? 'On $breakLabel • $breakDuration'
+                                  : 'You are currently working.',
+                      style: TextStyle(
+                        color: Colors.grey.shade600,
+                        fontSize: 13,
+                        height: 1.3,
+                      ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _breakButton(
-                        context,
-                        icon: Icons.coffee,
-                        title: 'Tea',
-                        onTap: _isActionLoading
-                            ? null
-                            : () => _handleBreakStart('tea'),
-                        isActive:
-                            onBreak && currentBreak['type'] == 'tea',
+                    const SizedBox(height: 20),
+
+                    // Stats row – clean grid
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _infoChip(
+                            Icons.login_rounded,
+                            'Punch In',
+                            punchInTime,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _infoChip(
+                            Icons.timer_outlined,
+                            'Work',
+                            workDuration,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _infoChip(
+                            Icons.free_breakfast_outlined,
+                            'Breaks',
+                            totalBreakDuration,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Break actions – minimal pills
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _breakButton(
+                          context,
+                          icon: Icons.coffee_outlined,
+                          title: 'Tea',
+                          onTap: _isActionLoading
+                              ? null
+                              : () => _handleBreakStart('tea'),
+                          isActive:
+                              onBreak && currentBreak['type'] == 'tea',
+                        ),
+                        _breakButton(
+                          context,
+                          icon: Icons.restaurant_outlined,
+                          title: 'Lunch',
+                          onTap: _isActionLoading || lunchBreakTaken
+                              ? null
+                              : () => _handleBreakStart('lunch'),
+                          isActive:
+                              onBreak && currentBreak['type'] == 'lunch',
+                          isDisabled: lunchBreakTaken,
+                        ),
+                        _breakButton(
+                          context,
+                          icon: Icons.emergency_outlined,
+                          title: 'Emergency',
+                          onTap: _isActionLoading
+                              ? null
+                              : () => _handleBreakStart('emergency'),
+                          isActive:
+                              onBreak && currentBreak['type'] == 'emergency',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      lunchBreakTaken
+                          ? 'Lunch break taken today.'
+                          : 'You can take one lunch break per day.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                        fontStyle: FontStyle.italic,
                       ),
-                      _breakButton(
-                        context,
-                        icon: Icons.restaurant,
-                        title: 'Lunch',
-                        onTap: _isActionLoading
-                            ? null
-                            : () => _handleBreakStart('lunch'),
-                        isActive:
-                            onBreak && currentBreak['type'] == 'lunch',
-                      ),
-                      _breakButton(
-                        context,
-                        icon: Icons.emergency,
-                        title: 'Emergency',
-                        onTap: _isActionLoading
-                            ? null
-                            : () => _handleBreakStart('emergency'),
-                        isActive:
-                            onBreak && currentBreak['type'] == 'emergency',
-                      ),
-                    ],
-                  ),
-                  if (onBreak) ...[
-                    const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 40,
-                      child: OutlinedButton.icon(
+                    ),
+                    if (onBreak) ...[
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
                         style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          side: const BorderSide(color: Colors.white),
+                          foregroundColor: const Color(0xFFceb56e),
+                          side: const BorderSide(color: Color(0xFFceb56e)),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(12),
                           ),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
                         ),
-                        onPressed: _isActionLoading ? null : _handleEndBreak,
-                        icon: const Icon(Icons.play_circle_outline),
+                        onPressed:
+                            _isActionLoading ? null : _handleEndBreak,
+                        icon: const Icon(Icons.play_circle_outline, size: 18),
                         label: const Text(
-                          'End Break & Resume Work',
-                          style: TextStyle(fontSize: 13),
+                          'End Break & Resume',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: buttonColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 0,
+                        ),
+                        onPressed: _isActionLoading
+                            ? null
+                            : (isWorking ? _handlePunchOut : _handlePunchIn),
+                        icon: _isActionLoading
+                            ? const SizedBox.shrink()
+                            : Icon(buttonIcon, size: 20),
+                        label: _isActionLoading
+                            ? const SizedBox(
+                                height: 20,
+                                width: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              )
+                            : Text(
+                                buttonLabel,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                       ),
                     ),
                   ],
-                  const SizedBox(height: 16),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton.icon(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: buttonColor,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 2,
-                      ),
-                      onPressed: _isActionLoading
-                          ? null
-                          : (isWorking ? _handlePunchOut : _handlePunchIn),
-                      icon: _isActionLoading
-                          ? const SizedBox.shrink()
-                          : Icon(buttonIcon),
-                      label: _isActionLoading
-                          ? const SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.white,
-                                ),
-                              ),
-                            )
-                          : Text(
-                              buttonLabel,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+        ),
       ),
     );
   }
 
   Widget _infoChip(IconData icon, String label, String value) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.9),
-        borderRadius: BorderRadius.circular(10),
+        color: const Color(0xFFceb56e).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18, color: const Color(0xFFceb56e)),
-          const SizedBox(width: 6),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                label,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          Icon(icon, size: 16, color: const Color(0xFFceb56e)),
+          const SizedBox(height: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF2D2D2D),
               ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-            ],
+              maxLines: 1,
+            ),
           ),
         ],
       ),
@@ -610,39 +652,38 @@ class _AttendanceCardState extends State<AttendanceCard> {
     required String title,
     required VoidCallback? onTap,
     required bool isActive,
+    bool isDisabled = false,
   }) {
+    final muted = isDisabled;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
+        Material(
+          color: isActive
+              ? const Color(0xFFceb56e).withValues(alpha: 0.15)
+              : (muted ? Colors.grey.shade200 : Colors.grey.shade100),
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: onTap,
+            customBorder: const CircleBorder(),
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Icon(
+                icon,
+                color: isActive
+                    ? const Color(0xFFceb56e)
+                    : (muted ? Colors.grey.shade400 : Colors.grey.shade600),
+                size: 22,
               ),
-            ],
-          ),
-          child: IconButton(
-            onPressed: onTap,
-            icon: Icon(
-              icon,
-              color: isActive
-                  ? Colors.red.shade600
-                  : const Color(0xFFceb56e),
             ),
-            iconSize: 24,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         Text(
           title,
-          style: const TextStyle(
-            fontSize: 12,
-            color: Colors.white,
+          style: TextStyle(
+            fontSize: 11,
+            color: muted ? Colors.grey.shade400 : Colors.grey.shade700,
             fontWeight: FontWeight.w600,
           ),
         ),

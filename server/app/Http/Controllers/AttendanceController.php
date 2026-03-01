@@ -371,6 +371,7 @@ class AttendanceController extends Controller
                 'punch_out_time' => null,
                 'work_duration_seconds' => 0,
                 'break_duration_seconds' => 0,
+                'lunch_break_taken' => false,
                 'current_break' => null,
             ];
         }
@@ -416,6 +417,8 @@ class AttendanceController extends Controller
             $status = 'working';
         }
 
+        $lunchBreakTaken = $breaks->where('type', 'lunch')->isNotEmpty();
+
         return [
             'status' => $status,
             'punch_in_time' => $punchIn->toIso8601String(),
@@ -424,6 +427,7 @@ class AttendanceController extends Controller
                 : null,
             'work_duration_seconds' => $workSeconds,
             'break_duration_seconds' => $totalBreakSeconds,
+            'lunch_break_taken' => $lunchBreakTaken,
             'current_break' => $activeBreak
                 ? [
                     'type' => $activeBreak->type,
@@ -457,6 +461,7 @@ class AttendanceController extends Controller
                 'punch_out_time' => null,
                 'work_duration_seconds' => 0,
                 'break_duration_seconds' => 0,
+                'lunch_break_taken' => false,
                 'current_break' => null,
             ];
         }
@@ -504,6 +509,8 @@ class AttendanceController extends Controller
             $status = 'working';
         }
 
+        $lunchBreakTaken = $breaks->where('type', 'lunch')->isNotEmpty();
+
         return [
             'status' => $status,
             'punch_in_time' => $punchIn->toIso8601String(),
@@ -512,6 +519,7 @@ class AttendanceController extends Controller
                 : null,
             'work_duration_seconds' => $workSeconds,
             'break_duration_seconds' => $totalBreakSeconds,
+            'lunch_break_taken' => $lunchBreakTaken,
             'current_break' => $activeBreak
                 ? [
                     'type' => $activeBreak->type,

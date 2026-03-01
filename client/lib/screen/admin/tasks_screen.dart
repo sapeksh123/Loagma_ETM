@@ -430,8 +430,12 @@ class _TasksScreenState extends State<TasksScreen> {
         return Icons.work;
       case 'personal':
         return Icons.person;
-      case 'family':
-        return Icons.family_restroom;
+      case 'monthly':
+        return Icons.calendar_month;
+      case 'quarterly':
+        return Icons.date_range;
+      case 'yearly':
+        return Icons.calendar_today;
       case 'other':
         return Icons.more_horiz;
       default:

@@ -22,6 +22,8 @@ class EmployeeDashboard extends StatefulWidget {
 }
 
 class _EmployeeDashboardState extends State<EmployeeDashboard> {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
   List<Task> _tasks = [];
   bool _isLoadingTasks = true;
   String? _tasksError;
@@ -159,6 +161,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       child: DefaultTabController(
         length: 5,
         child: Scaffold(
+          key: _scaffoldKey,
           backgroundColor: Colors.grey.shade50,
           appBar: AppBar(
             title: const Text(
@@ -167,6 +170,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ),
             elevation: 0,
             actions: [
+              // IconButton(
+              //   icon: const Icon(Icons.menu),
+              //   tooltip: 'Attendance & status',
+              //   onPressed: () =>
+              //       _scaffoldKey.currentState?.openDrawer(),
+              // ),
               IconButton(
                 icon: const Icon(Icons.notifications_outlined),
                 onPressed: () {},
@@ -177,6 +186,101 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 onPressed: () => _showLogoutConfirmation(context),
               ),
             ],
+          ),
+
+          drawer: Drawer(
+            width: MediaQuery.of(context).size.width * 0.85,
+            backgroundColor: Colors.grey.shade50,
+            child: SafeArea(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Employee details header
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.04),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.userName,
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF2D2D2D),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(Icons.badge_outlined,
+                                  size: 16, color: Colors.grey.shade600),
+                              const SizedBox(width: 6),
+                              Text(
+                                widget.userRole.isEmpty
+                                    ? 'Employee'
+                                    : widget.userRole[0].toUpperCase() +
+                                        widget.userRole.substring(1),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Icon(Icons.tag,
+                                  size: 16, color: Colors.grey.shade600),
+                              const SizedBox(width: 6),
+                              Text(
+                                'ID: ${widget.userId}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 16),
+                      child: Text(
+                        'Today\'s Attendance',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                    AttendanceCard(
+                      userId: widget.userId,
+                      userName: widget.userName,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
 
           floatingActionButton: FloatingActionButton.extended(
@@ -202,14 +306,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
           body: Column(
             children: [
-              const SizedBox(height: 16),
-
-              /// 🔹 Attendance Card
-              AttendanceCard(
-                userId: widget.userId,
-                userName: widget.userName,
-              ),
-
               const SizedBox(height: 16),
 
               /// 🔹 Category Tabs
@@ -250,8 +346,16 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       text: "Personal",
                     ),
                     Tab(
-                      icon: Icon(Icons.family_restroom, size: 22),
-                      text: "Family",
+                      icon: Icon(Icons.calendar_month, size: 22),
+                      text: "Monthly",
+                    ),
+                    Tab(
+                      icon: Icon(Icons.date_range, size: 22),
+                      text: "Quarterly",
+                    ),
+                    Tab(
+                      icon: Icon(Icons.calendar_today, size: 22),
+                      text: "Yearly",
                     ),
                     Tab(icon: Icon(Icons.more_horiz, size: 22), text: "Other"),
                   ],
@@ -265,7 +369,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     _buildTaskTab('daily'),
                     _buildTaskTab('project'),
                     _buildTaskTab('personal'),
-                    _buildTaskTab('family'),
+                    _buildTaskTab('monthly'),
+                    _buildTaskTab('quarterly'),
+                    _buildTaskTab('yearly'),
                     _buildTaskTab('other'),
                   ],
                 ),
@@ -385,8 +491,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         return Icons.work;
       case 'personal':
         return Icons.person;
-      case 'family':
-        return Icons.family_restroom;
+      case 'monthly':
+        return Icons.calendar_month;
+      case 'quarterly':
+        return Icons.date_range;
+      case 'yearly':
+        return Icons.calendar_today;
       case 'other':
         return Icons.more_horiz;
       default:

@@ -17,16 +17,16 @@ class ApiService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return jsonDecode(response.body);
       } else {
-        // Try to surface a helpful message from the backend
+        // Surface the backend message so user sees e.g. "You have already taken a lunch break today."
         try {
-          final data = jsonDecode(response.body);
-          final message = data['message'] ??
-              (data['errors'] != null ? data['errors'].toString() : null);
-          if (message != null) {
-            throw Exception(message);
+          final data = jsonDecode(response.body) as Map<String, dynamic>?;
+          final message = data?['message'] ??
+              (data?['errors'] != null ? data!['errors'].toString() : null);
+          if (message != null && message.toString().trim().isNotEmpty) {
+            throw Exception(message.toString().trim());
           }
-        } catch (_) {
-          // ignore JSON parse issues and fall back below
+        } on FormatException {
+          // JSON parse failed
         }
         throw Exception('Server error: ${response.statusCode}');
       }
@@ -46,13 +46,15 @@ class ApiService {
         return jsonDecode(response.body);
       } else {
         try {
-          final data = jsonDecode(response.body);
-          final message = data['message'] ??
-              (data['errors'] != null ? data['errors'].toString() : null);
-          if (message != null) {
-            throw Exception(message);
+          final data = jsonDecode(response.body) as Map<String, dynamic>?;
+          final message = data?['message'] ??
+              (data?['errors'] != null ? data!['errors'].toString() : null);
+          if (message != null && message.toString().trim().isNotEmpty) {
+            throw Exception(message.toString().trim());
           }
-        } catch (_) {}
+        } on FormatException {
+          // JSON parse failed
+        }
         throw Exception('Server error: ${response.statusCode}');
       }
     } catch (e) {

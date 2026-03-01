@@ -39,9 +39,19 @@ class TaskService {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         return jsonDecode(response.body);
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
       }
+      if (response.statusCode == 422) {
+        final body = jsonDecode(response.body);
+        final errors = body['errors'] as Map<String, dynamic>?;
+        final message = body['message'] as String?;
+        if (errors != null && errors.isNotEmpty) {
+          final first = errors.values.first;
+          final msg = first is List ? first.join(' ') : first.toString();
+          throw Exception(msg);
+        }
+        throw Exception(message ?? 'Validation failed');
+      }
+      throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
       throw Exception('Network error: $e');
     }

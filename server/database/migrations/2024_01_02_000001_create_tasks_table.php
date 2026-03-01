@@ -14,7 +14,7 @@ return new class extends Migration {
                 id VARCHAR(191) PRIMARY KEY,
                 title VARCHAR(255) NOT NULL,
                 description TEXT,
-                category ENUM('daily', 'project', 'personal', 'family', 'other') NOT NULL,
+                category ENUM('daily', 'project', 'personal', 'monthly', 'quarterly', 'yearly', 'other') NOT NULL,
                 priority ENUM('low', 'medium', 'high', 'critical') NOT NULL DEFAULT 'medium',
                 status ENUM('assigned', 'in_progress', 'completed', 'paused', 'need_help') NOT NULL DEFAULT 'assigned',
                 deadline_date DATE,

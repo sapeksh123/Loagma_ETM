@@ -74,7 +74,7 @@ class TaskController extends Controller
             $validated = $request->validate([
                 'title' => 'required|string|max:255',
                 'description' => 'nullable|string',
-                'category' => 'required|in:daily,project,personal,family,other',
+                'category' => 'required|in:daily,project,personal,monthly,quarterly,yearly,other',
                 'priority' => 'required|in:low,medium,high,critical',
                 'deadline_date' => 'nullable|date',
                 'deadline_time' => 'nullable',
@@ -193,7 +193,7 @@ class TaskController extends Controller
             $validated = $request->validate([
                 'title' => 'sometimes|string|max:255',
                 'description' => 'nullable|string',
-                'category' => 'sometimes|in:daily,project,personal,family,other',
+                'category' => 'sometimes|in:daily,project,personal,monthly,quarterly,yearly,other',
                 'priority' => 'sometimes|in:low,medium,high,critical',
                 'status' => 'sometimes|in:assigned,in_progress,completed,paused,need_help',
                 'deadline_date' => 'nullable|date',

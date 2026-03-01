@@ -15,25 +15,47 @@ class CreateTaskScreen extends StatefulWidget {
   State<CreateTaskScreen> createState() => _CreateTaskScreenState();
 }
 
+/// Holds one subtask row: unique id for stable keys + text controller.
+class _SubtaskEntry {
+  final String id;
+  final TextEditingController controller;
+  _SubtaskEntry(this.id, this.controller);
+}
+
 class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final List<_SubtaskEntry> _subtaskEntries = [];
 
   String _selectedCategory = 'project';
   String _selectedPriority = 'medium';
+  String _deadlinePreset = 'today'; // 'today' | '2days' | '1week' | 'custom'
   String _assignTo = 'self';
   String? _selectedEmployeeId;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
   bool _isLoading = false;
 
+  @override
+  void initState() {
+    super.initState();
+    _subtaskEntries.add(_SubtaskEntry(
+      _nextSubtaskId(),
+      TextEditingController(),
+    ));
+  }
+
+  String _nextSubtaskId() => 'subtask_${DateTime.now().millisecondsSinceEpoch}';
+
   final List<Map<String, String>> _categories = [
-    {'value': 'daily', 'label': 'Daily Task'},
-    {'value': 'project', 'label': 'Project Task'},
-    {'value': 'personal', 'label': 'Personal Task'},
-    {'value': 'family', 'label': 'Family Task'},
-    {'value': 'other', 'label': 'Other Task'},
+    {'value': 'daily', 'label': 'Daily'},
+    {'value': 'project', 'label': 'Project'},
+    {'value': 'personal', 'label': 'Personal'},
+    {'value': 'monthly', 'label': 'Monthly'},
+    {'value': 'quarterly', 'label': 'Quarterly'},
+    {'value': 'yearly', 'label': 'Yearly'},
+    {'value': 'other', 'label': 'Other'},
   ];
 
   final List<Map<String, String>> _priorities = [
@@ -47,7 +69,39 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    for (final e in _subtaskEntries) {
+      e.controller.dispose();
+    }
     super.dispose();
+  }
+
+  void _addSubtask() {
+    setState(() {
+      _subtaskEntries.add(_SubtaskEntry(
+        _nextSubtaskId(),
+        TextEditingController(),
+      ));
+    });
+  }
+
+  void _removeSubtask(int index) {
+    if (index < 0 || index >= _subtaskEntries.length) return;
+    _subtaskEntries[index].controller.dispose();
+    setState(() {
+      _subtaskEntries.removeAt(index);
+    });
+  }
+
+  /// Builds the combined description string: main description + optional subtasks list.
+  String _buildDescriptionForSubmit() {
+    final desc = _descriptionController.text.trim();
+    final subtaskTexts = _subtaskEntries
+        .map((e) => e.controller.text.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (subtaskTexts.isEmpty) return desc;
+    final subtaskBlock = subtaskTexts.map((s) => '• $s').join('\n');
+    return desc.isEmpty ? 'Subtasks:\n$subtaskBlock' : '$desc\n\nSubtasks:\n$subtaskBlock';
   }
 
   Future<void> _selectDate() async {
@@ -76,6 +130,34 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
   }
 
+  /// Deadline date from preset or custom picker.
+  DateTime? _getDeadlineDate() {
+    final now = DateTime.now();
+    switch (_deadlinePreset) {
+      case 'today':
+        return now;
+      case '2days':
+        return now.add(const Duration(days: 2));
+      case '1week':
+        return now.add(const Duration(days: 7));
+      case 'custom':
+        return _selectedDate;
+      default:
+        return _selectedDate;
+    }
+  }
+
+  /// Deadline time: for presets use end of day (23:59); for custom use picked time or null.
+  String? _getDeadlineTimeString() {
+    if (_deadlinePreset == 'custom' && _selectedTime != null) {
+      return '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00';
+    }
+    if (_deadlinePreset == 'today' || _deadlinePreset == '2days' || _deadlinePreset == '1week') {
+      return '23:59:00'; // end of day for presets
+    }
+    return null;
+  }
+
   Future<void> _createTask() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -86,19 +168,25 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     });
 
     try {
+      final DateTime? deadlineDate = _getDeadlineDate();
+      final String? deadlineTimeStr = _getDeadlineTimeString();
+
+      // Server requires assigned_to to be a non-empty string; fallback to self if employee ID missing
+      final hasEmployeeId = _selectedEmployeeId != null &&
+          _selectedEmployeeId!.trim().isNotEmpty;
+      final assignedTo = (_assignTo == 'self' || !hasEmployeeId)
+          ? widget.userId
+          : _selectedEmployeeId!.trim();
+
       final taskData = {
-        'title': _titleController.text,
-        'description': _descriptionController.text,
+        'title': _titleController.text.trim(),
+        'description': _buildDescriptionForSubmit(),
         'category': _selectedCategory,
         'priority': _selectedPriority,
-        'deadline_date': _selectedDate?.toIso8601String().split('T')[0],
-        'deadline_time': _selectedTime != null
-            ? '${_selectedTime!.hour.toString().padLeft(2, '0')}:${_selectedTime!.minute.toString().padLeft(2, '0')}:00'
-            : null,
+        'deadline_date': deadlineDate?.toIso8601String().split('T')[0],
+        'deadline_time': deadlineTimeStr,
         'created_by': widget.userId,
-        'assigned_to': _assignTo == 'self'
-            ? widget.userId
-            : _selectedEmployeeId,
+        'assigned_to': assignedTo,
       };
 
       final response = await TaskService.createTask(taskData);
@@ -203,23 +291,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'New Task',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Fill in the details to create a task.',
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(color: Colors.grey.shade600),
-                        ),
-                        const SizedBox(height: 20),
                         _buildSectionTitle('Task Category'),
-                        _buildCategoryDropdown(),
+                        _buildCategoryButtons(),
                         const SizedBox(height: 20),
                         if (widget.userRole == 'admin' &&
                             _selectedCategory == 'project') ...[
@@ -230,14 +303,21 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                         _buildSectionTitle('Task Title'),
                         _buildTitleField(),
                         const SizedBox(height: 20),
-                        _buildSectionTitle('Description / Subtask'),
+                        _buildSectionTitle('Subtasks'),
+                        _buildSubtasksSection(),
+                        const SizedBox(height: 20),
+                        _buildSectionTitle('Description'),
                         _buildDescriptionField(),
                         const SizedBox(height: 20),
                         _buildSectionTitle('Priority'),
                         _buildPrioritySelector(),
                         const SizedBox(height: 20),
                         _buildSectionTitle('Deadline'),
-                        _buildDeadlineSelector(),
+                        _buildDeadlinePresetButtons(),
+                        if (_deadlinePreset == 'custom') ...[
+                          const SizedBox(height: 12),
+                          _buildDeadlineSelector(),
+                        ],
                         const SizedBox(height: 24),
                         _buildCreateButton(),
                       ],
@@ -266,31 +346,78 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     );
   }
 
-  Widget _buildCategoryDropdown() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+  static const Color _gold = Color(0xFFceb56e);
+
+  /// Shared select button style for Category, Priority, and Deadline.
+  Widget _buildSelectButton({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+    bool flex = false,
+  }) {
+    final content = Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedCategory,
-          isExpanded: true,
-          items: _categories.map((category) {
-            return DropdownMenuItem(
-              value: category['value'],
-              child: Text(category['label']!),
-            );
-          }).toList(),
-          onChanged: (value) {
-            setState(() {
-              _selectedCategory = value!;
-            });
-          },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? _gold.withValues(alpha: 0.25) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? _gold : Colors.grey.shade300,
+              width: isSelected ? 2 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: flex ? MainAxisSize.max : MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (isSelected)
+                const Icon(Icons.check_circle, size: 18, color: _gold),
+              if (isSelected) const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    color: isSelected ? _gold : Colors.grey.shade700,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
+    );
+    if (flex) {
+      return Expanded(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: content,
+        ),
+      );
+    }
+    return content;
+  }
+
+  Widget _buildCategoryButtons() {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: _categories.map((category) {
+        final value = category['value']!;
+        final label = category['label']!;
+        final isSelected = _selectedCategory == value;
+        return _buildSelectButton(
+          label: label,
+          isSelected: isSelected,
+          onTap: () => setState(() => _selectedCategory = value),
+        );
+      }).toList(),
     );
   }
 
@@ -371,7 +498,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       controller: _descriptionController,
       maxLines: 4,
       decoration: InputDecoration(
-        hintText: 'Enter task description or subtasks',
+        hintText: 'Enter task description',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         filled: true,
         fillColor: Colors.white,
@@ -379,25 +506,140 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     );
   }
 
-  Widget _buildPrioritySelector() {
-    return Wrap(
-      spacing: 8,
-      children: _priorities.map((priority) {
-        final isSelected = _selectedPriority == priority['value'];
-        return ChoiceChip(
-          label: Text(priority['label']!),
-          selected: isSelected,
-          onSelected: (selected) {
-            setState(() {
-              _selectedPriority = priority['value']!;
-            });
-          },
-          selectedColor: const Color(0xFFceb56e).withValues(alpha: 0.3),
-          backgroundColor: Colors.white,
-          labelStyle: TextStyle(
-            color: isSelected ? const Color(0xFFceb56e) : Colors.grey.shade700,
-            fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+  Widget _buildSubtasksSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ...List.generate(_subtaskEntries.length, (index) {
+          final entry = _subtaskEntries[index];
+          final canRemove = _subtaskEntries.length > 1;
+          return Padding(
+            key: ValueKey(entry.id),
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: Checkbox(
+                    value: false,
+                    onChanged: null,
+                    activeColor: _gold,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: entry.controller,
+                    decoration: InputDecoration(
+                      hintText: 'Subtask ${index + 1}',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: canRemove ? () => _removeSubtask(index) : null,
+                    borderRadius: BorderRadius.circular(24),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Icon(
+                        Icons.remove_circle_outline,
+                        size: 24,
+                        color: canRemove
+                            ? Colors.grey.shade700
+                            : Colors.grey.shade400,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: _addSubtask,
+            borderRadius: BorderRadius.circular(12),
+            child: Ink(
+              decoration: BoxDecoration(
+                border: Border.all(color: _gold),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: const [
+                    Icon(Icons.add, size: 20, color: _gold),
+                    SizedBox(width: 8),
+                    Text(
+                      'Add subtask',
+                      style: TextStyle(
+                        color: _gold,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPrioritySelector() {
+    return Row(
+      children: _priorities.map((priority) {
+        final value = priority['value']!;
+        final label = priority['label']!;
+        final isSelected = _selectedPriority == value;
+        return _buildSelectButton(
+          label: label,
+          isSelected: isSelected,
+          onTap: () => setState(() => _selectedPriority = value),
+          flex: true,
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _buildDeadlinePresetButtons() {
+    const presets = [
+      {'value': 'today', 'label': 'Today'},
+      {'value': '2days', 'label': '2 Days'},
+      {'value': '1week', 'label': '1 Week'},
+      {'value': 'custom', 'label': 'Custom'},
+    ];
+    return Row(
+      children: presets.map((preset) {
+        final value = preset['value']!;
+        final label = preset['label']!;
+        final isSelected = _deadlinePreset == value;
+        return _buildSelectButton(
+          label: label,
+          isSelected: isSelected,
+          onTap: () => setState(() => _deadlinePreset = value),
+          flex: true,
         );
       }).toList(),
     );
@@ -440,7 +682,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           child: InkWell(
             onTap: _selectTime,
             child: Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(12),
