@@ -92,18 +92,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     });
   }
 
-  /// Builds the combined description string: main description + optional subtasks list.
-  String _buildDescriptionForSubmit() {
-    final desc = _descriptionController.text.trim();
-    final subtaskTexts = _subtaskEntries
-        .map((e) => e.controller.text.trim())
-        .where((s) => s.isNotEmpty)
-        .toList();
-    if (subtaskTexts.isEmpty) return desc;
-    final subtaskBlock = subtaskTexts.map((s) => '• $s').join('\n');
-    return desc.isEmpty ? 'Subtasks:\n$subtaskBlock' : '$desc\n\nSubtasks:\n$subtaskBlock';
-  }
-
   Future<void> _selectDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -178,9 +166,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ? widget.userId
           : _selectedEmployeeId!.trim();
 
+      final subtaskList = _subtaskEntries
+          .map((e) => e.controller.text.trim())
+          .where((s) => s.isNotEmpty)
+          .map((s) => {'text': s, 'status': 'assigned'})
+          .toList();
+
       final taskData = {
         'title': _titleController.text.trim(),
-        'description': _buildDescriptionForSubmit(),
+        'description': _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
+        'subtasks': subtaskList.isEmpty ? null : subtaskList,
         'category': _selectedCategory,
         'priority': _selectedPriority,
         'deadline_date': deadlineDate?.toIso8601String().split('T')[0],

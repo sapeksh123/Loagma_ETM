@@ -5,6 +5,12 @@ import '../../models/task_model.dart';
 import '../../services/task_service.dart';
 import '../admin/create_task_screen.dart';
 
+class _EditSubtaskEntry {
+  final TextEditingController controller;
+  String status;
+  _EditSubtaskEntry(this.controller, this.status);
+}
+
 class EmployeeDashboard extends StatefulWidget {
   final String userId;
   final String userRole;
@@ -27,6 +33,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   List<Task> _tasks = [];
   bool _isLoadingTasks = true;
   String? _tasksError;
+  /// Status filter: null = all, else one of assigned, in_progress, completed, paused, need_help
+  String? _statusFilter;
 
   @override
   void initState() {
@@ -66,6 +74,126 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         _isLoadingTasks = false;
       });
     }
+  }
+
+  static const Color _gold = Color(0xFFceb56e);
+
+  void _showStatusFilterPopup(BuildContext context) {
+    const statusOptions = [
+      {'value': null, 'label': 'All statuses'},
+      {'value': 'assigned', 'label': 'Assigned'},
+      {'value': 'in_progress', 'label': 'In progress'},
+      {'value': 'completed', 'label': 'Completed'},
+      {'value': 'paused', 'label': 'Paused'},
+      {'value': 'need_help', 'label': 'Need help'},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Filter by status',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Show only tasks with the selected status.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ...statusOptions.map((opt) {
+                  final value = opt['value'];
+                  final label = opt['label']!;
+                  final isSelected = _statusFilter == value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          _statusFilter = value;
+                        });
+                        Navigator.pop(context);
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 14,
+                          horizontal: 12,
+                        ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? _gold.withValues(alpha: 0.12)
+                                : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? _gold
+                                  : Colors.grey.shade200,
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              if (isSelected)
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: Color(0xFF6B5B2E),
+                                  size: 22,
+                                ),
+                              if (isSelected) const SizedBox(width: 12),
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight:
+                                      isSelected ? FontWeight.w600 : FontWeight.normal,
+                                  color: isSelected
+                                      ? const Color(0xFF6B5B2E)
+                                      : Colors.grey.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ),
+                    ),
+                  ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<bool> _showExitConfirmation(BuildContext context) async {
@@ -170,12 +298,16 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ),
             elevation: 0,
             actions: [
-              // IconButton(
-              //   icon: const Icon(Icons.menu),
-              //   tooltip: 'Attendance & status',
-              //   onPressed: () =>
-              //       _scaffoldKey.currentState?.openDrawer(),
-              // ),
+              IconButton(
+                icon: Icon(
+                  _statusFilter != null ? Icons.filter_list : Icons.filter_list_outlined,
+                  color: _statusFilter != null ? Colors.black87 : Colors.white,
+                ),
+                tooltip: _statusFilter != null
+                    ? 'Filter: ${_statusFilter!.replaceAll('_', ' ')} (tap to change)'
+                    : 'Filter by status',
+                onPressed: () => _showStatusFilterPopup(context),
+              ),
               IconButton(
                 icon: const Icon(Icons.notifications_outlined),
                 onPressed: () {},
@@ -320,22 +452,24 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     ),
                   ],
                 ),
-                child: const TabBar(
-                  isScrollable: false,
-                  labelColor: Color(0xFFceb56e),
+                child: TabBar(
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
+                  padding: const EdgeInsets.symmetric(horizontal:4 ),
+                  labelColor: const Color(0xFFceb56e),
                   unselectedLabelColor: Colors.grey,
-                  labelStyle: TextStyle(
+                  labelStyle: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 13,
                   ),
-                  unselectedLabelStyle: TextStyle(
+                  unselectedLabelStyle: const TextStyle(
                     fontWeight: FontWeight.normal,
                     fontSize: 12,
                   ),
-                  indicator: UnderlineTabIndicator(
+                  indicator: const UnderlineTabIndicator(
                     borderSide: BorderSide(color: Color(0xFFceb56e), width: 3),
                   ),
-                  tabs: [
+                  tabs: const [
                     Tab(icon: Icon(Icons.today, size: 22), text: "Daily"),
                     Tab(
                       icon: Icon(Icons.work_outline, size: 22),
@@ -411,8 +545,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       );
     }
 
-    final tasksForCategory =
+    var tasksForCategory =
         _tasks.where((t) => t.category == category).toList();
+    if (_statusFilter != null) {
+      tasksForCategory = tasksForCategory
+          .where((t) => t.status == _statusFilter)
+          .toList();
+    }
 
     if (tasksForCategory.isEmpty) {
       return Center(
@@ -481,6 +620,88 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       default:
         return Colors.grey.shade50;
     }
+  }
+
+  /// Subtask uses same status colors as task
+  Color _getSubtaskStatusColor(String status) => _getStatusColor(status);
+
+  /// Build updated subtasks list with one item's status changed; then call API.
+  Future<void> _updateSubtaskStatus(Task task, int index, String newStatus) async {
+    final list = task.subtasksWithStatus;
+    if (index < 0 || index >= list.length) return;
+    final updated = list.asMap().entries.map((e) {
+      final st = e.value;
+      return {
+        'text': st.text,
+        'status': e.key == index ? newStatus : st.status,
+      };
+    }).toList();
+    try {
+      await TaskService.updateTask(task.id, {'subtasks': updated});
+      if (!mounted) return;
+      _fetchTasks();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '').trim())),
+      );
+    }
+  }
+
+  /// Show small popup to pick subtask status; then call onSelected and optionally update task.
+  Future<void> _showSubtaskStatusPicker({
+    required BuildContext context,
+    required String currentStatus,
+    required void Function(String) onSelected,
+  }) async {
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Subtask status',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _taskStatuses.map((s) {
+                    final selected = s == currentStatus;
+                    final color = _getStatusColor(s);
+                    return ChoiceChip(
+                      label: Text(
+                        s.replaceAll('_', ' '),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: selected ? color : Colors.grey.shade800,
+                        ),
+                      ),
+                      selected: selected,
+                      onSelected: (_) {
+                        onSelected(s);
+                        Navigator.pop(ctx);
+                      },
+                      selectedColor: color.withValues(alpha: 0.2),
+                      backgroundColor: Colors.grey.shade100,
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   IconData _getCategoryIcon(String category) {
@@ -555,16 +776,104 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     ),
                   ],
                 ),
-                if (task.description != null &&
-                    task.description!.isNotEmpty) ...[
+                if (task.descriptionOnly != null &&
+                    task.descriptionOnly!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
-                    task.description!,
+                    'Description',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    task.descriptionOnly!,
                     style:
                         TextStyle(fontSize: 14, color: Colors.grey.shade600),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ],
+                if (task.subtasksWithStatus.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Subtasks',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...task.subtasksWithStatus.take(3).toList().asMap().entries.map(
+                    (entry) {
+                      final idx = entry.key;
+                      final st = entry.value;
+                      final color = _getSubtaskStatusColor(st.status);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                st.text,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade800,
+                                  decoration: st.status == 'completed'
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _showSubtaskStatusPicker(
+                                  context: context,
+                                  currentStatus: st.status,
+                                  onSelected: (s) =>
+                                      _updateSubtaskStatus(task, idx, s),
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.15),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: color, width: 1.5),
+                                  ),
+                                  child: Icon(
+                                    Icons.flag,
+                                    size: 16,
+                                    color: color,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  if (task.subtasksWithStatus.length > 3)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        '+${task.subtasksWithStatus.length - 3} more',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ),
                 ],
               ],
             ),
@@ -619,15 +928,90 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                if (task.description != null &&
-                    task.description!.isNotEmpty) ...[
+                if (task.descriptionOnly != null &&
+                    task.descriptionOnly!.isNotEmpty) ...[
                   const SizedBox(height: 4),
+                  const Text(
+                    'Description',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
                   Text(
-                    task.description!,
+                    task.descriptionOnly!,
                     style: TextStyle(
                       fontSize: 13,
                       color: Colors.grey.shade700,
                     ),
+                  ),
+                ],
+                if (task.subtasksWithStatus.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Subtasks',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  ...task.subtasksWithStatus.toList().asMap().entries.map(
+                    (entry) {
+                      final idx = entry.key;
+                      final st = entry.value;
+                      final color = _getSubtaskStatusColor(st.status);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                st.text,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.black87,
+                                  decoration: st.status == 'completed'
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _showSubtaskStatusPicker(
+                                  context: context,
+                                  currentStatus: st.status,
+                                  onSelected: (s) =>
+                                      _updateSubtaskStatus(task, idx, s),
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.15),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: color, width: 1.5),
+                                  ),
+                                  child: Icon(
+                                    Icons.flag,
+                                    size: 18,
+                                    color: color,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
                 const SizedBox(height: 12),
@@ -720,109 +1104,433 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
+  static const _categories = [
+    'daily', 'project', 'personal', 'monthly', 'quarterly', 'yearly', 'other',
+  ];
+  static const _priorities = ['low', 'medium', 'high', 'critical'];
+  static const _taskStatuses = [
+    'assigned', 'in_progress', 'completed', 'paused', 'need_help',
+  ];
+
   Future<void> _openTaskEdit(Task task) async {
     final titleController = TextEditingController(text: task.title);
     final descriptionController =
-        TextEditingController(text: task.description ?? '');
+        TextEditingController(text: task.descriptionOnly ?? '');
+    String taskStatus = task.status;
+    String priority = task.priority;
+    String category = task.category;
+    DateTime? deadlineDate = task.deadlineDate != null
+        ? _parseDate(task.deadlineDate!)
+        : null;
+    TimeOfDay? deadlineTime = task.deadlineTime != null
+        ? _parseTime(task.deadlineTime!)
+        : null;
+
+    final subtaskEntries = <_EditSubtaskEntry>[];
+    for (final st in task.subtasksWithStatus) {
+      subtaskEntries.add(_EditSubtaskEntry(
+        TextEditingController(text: st.text),
+        st.status,
+      ));
+    }
+    if (subtaskEntries.isEmpty) {
+      subtaskEntries.add(_EditSubtaskEntry(
+        TextEditingController(),
+        'assigned',
+      ));
+    }
 
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 12,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Edit Task',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Task Title',
-                    border: OutlineInputBorder(),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return DraggableScrollableSheet(
+              initialChildSize: 0.85,
+              minChildSize: 0.5,
+              maxChildSize: 0.95,
+              expand: false,
+              builder: (context, scrollController) {
+                return Padding(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    top: 8,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 16,
                   ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: descriptionController,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'Description / Subtask',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 46,
-                  child: ElevatedButton(
-                    onPressed: () async {
-                      final updatedData = {
-                        'title': titleController.text.trim(),
-                        'description': descriptionController.text.trim(),
-                      };
-
-                      try {
-                        await TaskService.updateTask(task.id, updatedData);
-                        if (!mounted) return;
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Task updated successfully'),
-                          ),
-                        );
-                        _fetchTasks();
-                      } catch (e) {
-                        if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              e.toString()
-                                  .replaceFirst('Exception: ', '')
-                                  .trim(),
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 40,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(2),
                             ),
                           ),
-                        );
-                      }
-                    },
-                    child: const Text(
-                      'Save',
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text(
+                              'Edit Task',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close),
+                              onPressed: () {
+                                for (final e in subtaskEntries) {
+                                  e.controller.dispose();
+                                }
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ],
+                        ),
+                        _buildEditSection('Task Title'),
+                        TextField(
+                          controller: titleController,
+                          decoration: _inputDecoration('Title'),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildEditSection('Description'),
+                        TextField(
+                          controller: descriptionController,
+                          maxLines: 3,
+                          decoration: _inputDecoration('Description'),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildEditSection('Task Status'),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _taskStatuses.map((s) {
+                            final selected = taskStatus == s;
+                            final color = _getStatusColor(s);
+                            return ChoiceChip(
+                              label: Text(
+                                s.replaceAll('_', ' '),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: selected ? color : Colors.grey.shade700,
+                                ),
+                              ),
+                              selected: selected,
+                              onSelected: (_) =>
+                                  setModalState(() => taskStatus = s),
+                              selectedColor: color.withValues(alpha: 0.2),
+                              backgroundColor: Colors.grey.shade100,
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildEditSection('Priority'),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _priorities.map((p) {
+                            final selected = priority == p;
+                            return ChoiceChip(
+                              label: Text(p[0].toUpperCase() + p.substring(1)),
+                              selected: selected,
+                              onSelected: (_) =>
+                                  setModalState(() => priority = p),
+                              selectedColor: _gold.withValues(alpha: 0.2),
+                              backgroundColor: Colors.grey.shade100,
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildEditSection('Category'),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _categories.map((c) {
+                            final selected = category == c;
+                            return ChoiceChip(
+                              label: Text(c[0].toUpperCase() + c.substring(1)),
+                              selected: selected,
+                              onSelected: (_) =>
+                                  setModalState(() => category = c),
+                              selectedColor: _gold.withValues(alpha: 0.2),
+                              backgroundColor: Colors.grey.shade100,
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        _buildEditSection('Deadline'),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  final picked = await showDatePicker(
+                                    context: context,
+                                    initialDate: deadlineDate ?? DateTime.now(),
+                                    firstDate: DateTime(2020),
+                                    lastDate: DateTime(2100),
+                                  );
+                                  if (picked != null) {
+                                    setModalState(() => deadlineDate = picked);
+                                  }
+                                },
+                                icon: const Icon(Icons.calendar_today, size: 18),
+                                label: Text(
+                                  deadlineDate != null
+                                      ? '${deadlineDate!.day}/${deadlineDate!.month}/${deadlineDate!.year}'
+                                      : 'Date',
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                    foregroundColor: _gold,
+                                    side: const BorderSide(color: _gold)),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: () async {
+                                  final picked = await showTimePicker(
+                                    context: context,
+                                    initialTime: deadlineTime ?? TimeOfDay.now(),
+                                  );
+                                  if (picked != null) {
+                                    setModalState(() => deadlineTime = picked);
+                                  }
+                                },
+                                icon: const Icon(Icons.access_time, size: 18),
+                                label: Text(
+                                  deadlineTime != null
+                                      ? '${deadlineTime!.hour}:${deadlineTime!.minute.toString().padLeft(2, '0')}'
+                                      : 'Time',
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                    foregroundColor: _gold,
+                                    side: const BorderSide(color: _gold)),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        _buildEditSection('Subtasks'),
+                        ...subtaskEntries.asMap().entries.map((entry) {
+                          final i = entry.key;
+                          final e = entry.value;
+                          final stColor = _getSubtaskStatusColor(e.status);
+                          return Padding(
+                            key: ValueKey('$i-${e.status}'),
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: e.controller,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                    ),
+                                    decoration: _inputDecoration('Subtask'),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () => _showSubtaskStatusPicker(
+                                      context: context,
+                                      currentStatus: e.status,
+                                      onSelected: (s) =>
+                                          setModalState(() => e.status = s),
+                                    ),
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: stColor.withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: stColor, width: 1.5),
+                                      ),
+                                      child: Icon(
+                                        Icons.flag,
+                                        size: 18,
+                                        color: stColor,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                  onPressed: subtaskEntries.length > 1
+                                      ? () {
+                                          e.controller.dispose();
+                                          setModalState(() {
+                                            subtaskEntries.removeAt(i);
+                                          });
+                                        }
+                                      : null,
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        OutlinedButton.icon(
+                          onPressed: () => setModalState(() {
+                            subtaskEntries.add(_EditSubtaskEntry(
+                              TextEditingController(),
+                              'assigned',
+                            ));
+                          }),
+                          icon: const Icon(Icons.add, size: 20),
+                          label: const Text('Add subtask'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _gold,
+                            side: const BorderSide(color: _gold),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: () async {
+                              final subtasksPayload = subtaskEntries
+                                  .map((e) => {
+                                        'text': e.controller.text.trim(),
+                                        'status': e.status,
+                                      })
+                                  .where((m) => m['text']!.toString().isNotEmpty)
+                                  .toList();
+                              final updatedData = {
+                                'title': titleController.text.trim(),
+                                'description':
+                                    descriptionController.text.trim().isEmpty
+                                        ? null
+                                        : descriptionController.text.trim(),
+                                'status': taskStatus,
+                                'priority': priority,
+                                'category': category,
+                                'subtasks': subtasksPayload.isEmpty
+                                    ? null
+                                    : subtasksPayload,
+                              };
+                              final d = deadlineDate;
+                              if (d != null) {
+                                updatedData['deadline_date'] =
+                                    '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                              }
+                              final t = deadlineTime;
+                              if (t != null) {
+                                updatedData['deadline_time'] =
+                                    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+                              }
+                              try {
+                                await TaskService.updateTask(
+                                    task.id, updatedData);
+                                if (!mounted) return;
+                                for (final e in subtaskEntries) {
+                                  e.controller.dispose();
+                                }
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Task updated successfully'),
+                                  ),
+                                );
+                                _fetchTasks();
+                              } catch (e) {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      e.toString()
+                                          .replaceFirst('Exception: ', '')
+                                          .trim(),
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _gold,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text(
+                              'Save',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
+                );
+              },
+            );
+          },
         );
       },
     );
+  }
+
+  Widget _buildEditSection(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: Colors.black87,
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _inputDecoration(String? hint) {
+    return InputDecoration(
+      hintText: hint,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    );
+  }
+
+  DateTime? _parseDate(String d) {
+    final parts = d.split(RegExp(r'[-/]'));
+    if (parts.length >= 3) {
+      final y = int.tryParse(parts[0].length == 4 ? parts[0] : parts[2]);
+      final m = int.tryParse(parts[1]);
+      final day = int.tryParse(parts[0].length == 4 ? parts[2] : parts[0]);
+      if (y != null && m != null && day != null) {
+        return DateTime(y, m, day);
+      }
+    }
+    return null;
+  }
+
+  TimeOfDay? _parseTime(String t) {
+    final parts = t.split(':');
+    if (parts.length >= 2) {
+      final h = int.tryParse(parts[0]);
+      final m = int.tryParse(parts[1]);
+      if (h != null && m != null) return TimeOfDay(hour: h, minute: m);
+    }
+    return null;
   }
 
   Future<void> _openStatusChange(Task task) async {

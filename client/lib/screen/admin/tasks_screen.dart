@@ -390,6 +390,89 @@ class _TasksScreenState extends State<TasksScreen> {
     }
   }
 
+  static const _taskStatuses = [
+    'assigned', 'in_progress', 'completed', 'paused', 'need_help',
+  ];
+
+  Color _getSubtaskStatusColor(String status) => _getStatusColor(status);
+
+  Future<void> _updateSubtaskStatus(Task task, int index, String newStatus) async {
+    final list = task.subtasksWithStatus;
+    if (index < 0 || index >= list.length) return;
+    final updated = list.asMap().entries.map((e) {
+      final st = e.value;
+      return {
+        'text': st.text,
+        'status': e.key == index ? newStatus : st.status,
+      };
+    }).toList();
+    try {
+      await TaskService.updateTask(task.id, {'subtasks': updated});
+      if (!mounted) return;
+      _fetchTasks();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '').trim())),
+      );
+    }
+  }
+
+  Future<void> _showSubtaskStatusPicker({
+    required BuildContext context,
+    required String currentStatus,
+    required void Function(String) onSelected,
+  }) async {
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Subtask status',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _taskStatuses.map((s) {
+                    final selected = s == currentStatus;
+                    final color = _getStatusColor(s);
+                    return ChoiceChip(
+                      label: Text(
+                        s.replaceAll('_', ' '),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: selected ? color : Colors.grey.shade800,
+                        ),
+                      ),
+                      selected: selected,
+                      onSelected: (_) {
+                        onSelected(s);
+                        Navigator.pop(ctx);
+                      },
+                      selectedColor: color.withValues(alpha: 0.2),
+                      backgroundColor: Colors.grey.shade100,
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Color _getStatusBackground(String status) {
     switch (status) {
       case 'assigned':
@@ -722,15 +805,103 @@ class _TasksScreenState extends State<TasksScreen> {
                     ),
                   ],
                 ),
-                if (task.description != null &&
-                    task.description!.isNotEmpty) ...[
+                if (task.descriptionOnly != null &&
+                    task.descriptionOnly!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
-                    task.description!,
+                    'Description',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    task.descriptionOnly!,
                     style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
+                ],
+                if (task.subtasksWithStatus.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Subtasks',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  ...task.subtasksWithStatus.take(3).toList().asMap().entries.map(
+                    (entry) {
+                      final idx = entry.key;
+                      final st = entry.value;
+                      final color = _getSubtaskStatusColor(st.status);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                st.text,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade800,
+                                  decoration: st.status == 'completed'
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _showSubtaskStatusPicker(
+                                  context: context,
+                                  currentStatus: st.status,
+                                  onSelected: (s) =>
+                                      _updateSubtaskStatus(task, idx, s),
+                                ),
+                                borderRadius: BorderRadius.circular(20),
+                                child: Container(
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.15),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: color, width: 1.5),
+                                  ),
+                                  child: Icon(
+                                    Icons.flag,
+                                    size: 16,
+                                    color: color,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                  if (task.subtasksWithStatus.length > 3)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        '+${task.subtasksWithStatus.length - 3} more',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade500,
+                        ),
+                      ),
+                    ),
                 ],
                 const SizedBox(height: 10),
                 Row(
