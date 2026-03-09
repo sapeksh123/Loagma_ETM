@@ -51,14 +51,7 @@ class _OtpScreenState extends State<OtpScreen> {
       if (!mounted) return;
 
       // Navigate based on role
-      if (user.role == 'admin') {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => const AdminDashboard(),
-          ),
-        );
-      } else {
+      if (user.role == 'employee') {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -66,6 +59,18 @@ class _OtpScreenState extends State<OtpScreen> {
               userId: user.id,
               userRole: user.role,
               userName: user.name,
+            ),
+          ),
+        );
+      } else {
+        // admin, subadmin, techincharge all use the manager dashboard
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AdminDashboard(
+              userId: user.id,
+              userName: user.name,
+              userRole: user.role,
             ),
           ),
         );

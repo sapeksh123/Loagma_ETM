@@ -10,7 +10,7 @@ use Illuminate\Validation\ValidationException;
 
 class TaskController extends Controller
 {
-    /** Decode subtasks JSON and normalize to [{text, status}] for API response */
+    /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response */
     private static function decodeTask($task)
     {
         if (!$task) return $task;
@@ -22,7 +22,7 @@ class TaskController extends Controller
         return $arr;
     }
 
-    /** Normalize subtasks to [{text, status}] for API response */
+    /** Normalize subtasks to [{text, status, need_help_note?}] for API response */
     private static function normalizeSubtasksForResponse($raw)
     {
         if (!is_array($raw)) return [];
@@ -31,10 +31,14 @@ class TaskController extends Controller
             if (is_array($item) && isset($item['text'])) {
                 $validStatus = ['assigned', 'in_progress', 'completed', 'paused', 'need_help'];
                 $status = $item['status'] ?? 'assigned';
-                $out[] = [
+                $row = [
                     'text' => (string) $item['text'],
                     'status' => in_array($status, $validStatus) ? $status : 'assigned',
                 ];
+                if (!empty($item['need_help_note']) && is_string($item['need_help_note'])) {
+                    $row['need_help_note'] = trim($item['need_help_note']);
+                }
+                $out[] = $row;
             } elseif (is_string($item)) {
                 $out[] = ['text' => $item, 'status' => 'assigned'];
             }
@@ -42,7 +46,7 @@ class TaskController extends Controller
         return $out;
     }
 
-    /** Normalize subtasks from request to [{text, status}] for storage. Accepts array or JSON string. */
+    /** Normalize subtasks from request to [{text, status, need_help_note?}] for storage. Accepts array or JSON string. */
     private static function normalizeSubtasksForStorage($input)
     {
         if (is_string($input)) {
@@ -62,7 +66,11 @@ class TaskController extends Controller
                 }
                 $text = trim((string) $item['text']);
                 if ($text !== '') {
-                    $out[] = ['text' => $text, 'status' => $status];
+                    $row = ['text' => $text, 'status' => $status];
+                    if (!empty($item['need_help_note']) && is_string($item['need_help_note'])) {
+                        $row['need_help_note'] = trim($item['need_help_note']);
+                    }
+                    $out[] = $row;
                 }
             } elseif (is_string($item) && trim($item) !== '') {
                 $out[] = ['text' => trim($item), 'status' => 'assigned'];
@@ -116,8 +124,10 @@ class TaskController extends Controller
                 ], 400);
             }
 
-            if ($userRole === 'admin') {
-                // Admin sees: ALL project tasks + their own personal tasks
+            if (in_array($userRole, ['admin', 'subadmin', 'techincharge'], true)) {
+                // Manager roles (admin, subadmin, techincharge) see:
+                // - ALL project tasks
+                // - Their own tasks (created_by = user or assigned_to = user)
                 $tasks = DB::table('tasks')
                     ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
                     ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
@@ -129,7 +139,8 @@ class TaskController extends Controller
                     )
                     ->where(function ($query) use ($userId) {
                         $query->where('tasks.category', 'project')
-                            ->orWhere('tasks.created_by', $userId);
+                            ->orWhere('tasks.created_by', $userId)
+                            ->orWhere('tasks.assigned_to', $userId);
                     })
                     ->orderBy('tasks.createdAt', 'desc')
                     ->get();
@@ -149,12 +160,7 @@ class TaskController extends Controller
             }
 
             $data = $tasks->map(function ($task) {
-                $arr = (array) $task;
-                if (isset($arr['subtasks'])) {
-                    $raw = is_string($arr['subtasks']) ? json_decode($arr['subtasks'], true) : $arr['subtasks'];
-                    $arr['subtasks'] = self::normalizeSubtasksForResponse($raw ?? []);
-                }
-                return $arr;
+                return self::decodeTask($task);
             })->values()->all();
 
             return response()->json([
@@ -374,6 +380,7 @@ class TaskController extends Controller
         try {
             $validated = $request->validate([
                 'status' => 'required|in:assigned,in_progress,completed,paused,need_help',
+                'need_help_note' => 'nullable|string|max:2000',
             ]);
 
             $task = DB::table('tasks')->where('id', $id)->first();
@@ -385,9 +392,18 @@ class TaskController extends Controller
                 ], 404);
             }
 
-            DB::table('tasks')->where('id', $id)->update([
-                'status' => $validated['status']
-            ]);
+            $update = ['status' => $validated['status']];
+
+            if ($validated['status'] === 'need_help' && array_key_exists('need_help_note', $validated)) {
+                $update['need_help_note'] = $validated['need_help_note']
+                    ? trim($validated['need_help_note'])
+                    : null;
+            } else {
+                // Clear note when leaving need_help status
+                $update['need_help_note'] = null;
+            }
+
+            DB::table('tasks')->where('id', $id)->update($update);
 
             $updatedTask = DB::table('tasks')->where('id', $id)->first();
 

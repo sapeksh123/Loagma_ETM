@@ -1,14 +1,30 @@
 import 'package:flutter/material.dart';
 import '../../services/task_service.dart';
 
+/// When non-null, Assign To section is hidden and task is assigned accordingly.
+/// 'self' = assign to current user; 'employee' = assign to [assignedToEmployeeId].
+enum CreateTaskAssignMode { self, employee }
+
 class CreateTaskScreen extends StatefulWidget {
   final String userId;
   final String userRole;
+  /// Controls whether the "Assign To" selector (self/employee) is visible.
+  /// This is typically true for admin flows and false for employee self-creation.
+  final bool showAssignToSelector;
+  /// When set, hide "Assign To" and use this: self = assign to self, employee = assign to [assignedToEmployeeId].
+  final CreateTaskAssignMode? assignMode;
+  /// Required when [assignMode] is [CreateTaskAssignMode.employee].
+  final String? assignedToEmployeeId;
+  final String? assignedToEmployeeName;
 
   const CreateTaskScreen({
     super.key,
     required this.userId,
     required this.userRole,
+    this.showAssignToSelector = true,
+    this.assignMode,
+    this.assignedToEmployeeId,
+    this.assignedToEmployeeName,
   });
 
   @override
@@ -40,6 +56,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.assignMode == CreateTaskAssignMode.self) {
+      _assignTo = 'self';
+    } else if (widget.assignMode == CreateTaskAssignMode.employee &&
+        widget.assignedToEmployeeId != null &&
+        widget.assignedToEmployeeId!.trim().isNotEmpty) {
+      _assignTo = 'employee';
+      _selectedEmployeeId = widget.assignedToEmployeeId!.trim();
+    }
     _subtaskEntries.add(_SubtaskEntry(
       _nextSubtaskId(),
       TextEditingController(),
@@ -291,11 +315,16 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                         _buildSectionTitle('Task Category'),
                         _buildCategoryButtons(),
                         const SizedBox(height: 20),
-                        if (widget.userRole == 'admin' &&
-                            _selectedCategory == 'project') ...[
+                        if (widget.showAssignToSelector &&
+                            widget.assignMode == null) ...[
                           _buildSectionTitle('Assign To'),
                           _buildAssignToSelector(),
                           const SizedBox(height: 20),
+                        ],
+                        if (widget.assignMode == CreateTaskAssignMode.employee &&
+                            widget.assignedToEmployeeName != null) ...[
+                          _buildAssigningToChip(),
+                          const SizedBox(height: 16),
                         ],
                         _buildSectionTitle('Task Title'),
                         _buildTitleField(),
@@ -443,7 +472,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           },
           activeColor: const Color(0xFFceb56e),
         ),
-        if (_assignTo == 'employee')
+        if (_assignTo == 'employee' && widget.assignMode == null)
           Padding(
             padding: const EdgeInsets.only(left: 16, top: 8),
             child: TextFormField(
@@ -469,6 +498,32 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildAssigningToChip() {
+    final name = widget.assignedToEmployeeName ?? 'Employee';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: _gold.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _gold.withValues(alpha: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.person_outline, size: 20, color: _gold),
+          const SizedBox(width: 10),
+          Text(
+            'Assigning to: $name',
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

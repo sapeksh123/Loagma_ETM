@@ -44,22 +44,40 @@ class AuthService {
       throw Exception('User not found');
     }
 
-    // Business rule based on your DB:
-    // - roles table has id R001 with name 'admin'
-    // - users.roleId = R001  => Admin dashboard
-    // - Any other roleId     => Employee dashboard
+    // Business rule based on your DB (roles table screenshot):
+    //   R001 => admin
+    //   R006 => subadmin
+    //   R007 => technincharge
+    //   others => treated as employee inside this app
     final roleId = match['roleId']?.toString();
-    final bool isAdminFromRoles = roleId == 'R001';
+    String appRole;
+    switch (roleId) {
+      case 'R001':
+        appRole = 'admin';
+        break;
+      case 'R006':
+        appRole = 'subadmin';
+        break;
+      case 'R007':
+        appRole = 'techincharge';
+        break;
+      default:
+        appRole = 'employee';
+        break;
+    }
+
+    final isManagerRole =
+        appRole == 'admin' || appRole == 'subadmin' || appRole == 'techincharge';
 
     return User(
       id: match['id']?.toString() ?? phone,
       name: match['name']?.toString().isNotEmpty == true
           ? match['name'].toString()
-          : (isAdminFromRoles ? 'Admin User' : 'Employee User'),
+          : (isManagerRole ? 'Manager User' : 'Employee User'),
       phone: match['contactNumber']?.toString().isNotEmpty == true
           ? match['contactNumber'].toString()
           : phone,
-      role: isAdminFromRoles ? 'admin' : 'employee',
+      role: appRole,
       email: match['email']?.toString(),
     );
   }

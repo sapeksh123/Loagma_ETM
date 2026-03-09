@@ -6,13 +6,17 @@ class TaskService {
   // Get all tasks
   static Future<Map<String, dynamic>> getTasks(
     String userId,
-    String userRole,
-  ) async {
+    String userRole, {
+    bool needHelpOnly = false,
+  }) async {
     try {
+      final query = StringBuffer(
+          '${ApiConfig.baseUrl}/tasks?user_id=$userId&user_role=$userRole');
+      if (needHelpOnly) {
+        query.write('&need_help=1');
+      }
       final response = await http.get(
-        Uri.parse(
-          '${ApiConfig.baseUrl}/tasks?user_id=$userId&user_role=$userRole',
-        ),
+        Uri.parse(query.toString()),
         headers: {'Content-Type': 'application/json'},
       );
 
@@ -79,16 +83,23 @@ class TaskService {
     }
   }
 
-  // Update task status
+  // Update task status (optional need_help_note when status is need_help)
   static Future<Map<String, dynamic>> updateTaskStatus(
     String taskId,
-    String status,
-  ) async {
+    String status, {
+    String? needHelpNote,
+  }) async {
     try {
+      final payload = <String, dynamic>{'status': status};
+      if (status == 'need_help' &&
+          needHelpNote != null &&
+          needHelpNote.trim().isNotEmpty) {
+        payload['need_help_note'] = needHelpNote.trim();
+      }
       final response = await http.patch(
         Uri.parse('${ApiConfig.baseUrl}/tasks/$taskId/status'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'status': status}),
+        body: jsonEncode(payload),
       );
 
       if (response.statusCode == 200) {

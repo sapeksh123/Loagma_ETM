@@ -1,18 +1,19 @@
 import 'dart:convert';
 
-/// A single subtask with status same as task (assigned, in_progress, completed, paused, need_help).
+/// A single subtask with status and optional need_help_note when status is need_help.
 class SubtaskItem {
   final String text;
   final String status;
+  final String? needHelpNote;
 
-  SubtaskItem({required this.text, this.status = 'assigned'});
+  SubtaskItem({required this.text, this.status = 'assigned', this.needHelpNote});
 
   factory SubtaskItem.fromJson(dynamic json) {
-    if (json is Map<String, dynamic>) {
-      return SubtaskItem(
-        text: json['text']?.toString() ?? '',
-        status: _parseStatus(json['status']),
-      );
+    if (json is Map) {
+      final text = json['text']?.toString() ?? '';
+      final status = _parseStatus(json['status']);
+      final needHelpNote = _parseOptionalString(json['need_help_note']);
+      return SubtaskItem(text: text, status: status, needHelpNote: needHelpNote);
     }
     if (json is String) {
       return SubtaskItem(text: json, status: 'assigned');
@@ -28,7 +29,19 @@ class SubtaskItem {
     return 'assigned';
   }
 
-  Map<String, dynamic> toJson() => {'text': text, 'status': status};
+  static String? _parseOptionalString(dynamic v) {
+    if (v == null) return null;
+    final s = v.toString().trim();
+    return s.isEmpty ? null : s;
+  }
+
+  Map<String, dynamic> toJson() {
+    final m = <String, dynamic>{'text': text, 'status': status};
+    if (needHelpNote != null && needHelpNote!.isNotEmpty) {
+      m['need_help_note'] = needHelpNote;
+    }
+    return m;
+  }
 }
 
 class Task {
@@ -47,6 +60,7 @@ class Task {
   final String? creatorName;
   final String? assigneeName;
   final String? assigneeCode;
+  final String? needHelpNote;
   final String createdAt;
   final String updatedAt;
 
@@ -66,6 +80,7 @@ class Task {
     this.creatorName,
     this.assigneeName,
     this.assigneeCode,
+    this.needHelpNote,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -102,6 +117,7 @@ class Task {
       creatorName: json['creator_name'],
       assigneeName: json['assignee_name'],
       assigneeCode: json['assignee_code'],
+      needHelpNote: json['need_help_note'],
       createdAt: json['createdAt'] ?? '',
       updatedAt: json['updatedAt'] ?? '',
     );

@@ -7,8 +7,19 @@ import 'create_task_screen.dart';
 class TasksScreen extends StatefulWidget {
   final String userId;
   final String userRole;
+  /// For admin: 'self' or 'employee'. Ignored for non-admin.
+  final String initialViewMode;
+  /// When true (from dashboard cards), hide the internal self/employee switch
+  /// and lock the view to [initialViewMode].
+  final bool lockViewMode;
 
-  const TasksScreen({super.key, required this.userId, required this.userRole});
+  const TasksScreen({
+    super.key,
+    required this.userId,
+    required this.userRole,
+    this.initialViewMode = 'self',
+    this.lockViewMode = false,
+  });
 
   @override
   State<TasksScreen> createState() => _TasksScreenState();
@@ -27,13 +38,24 @@ class _TasksScreenState extends State<TasksScreen> {
   String? _selectedEmployeeId;
   String? _selectedEmployeeName;
 
+  bool get _isManagerRole =>
+      widget.userRole == 'admin' ||
+      widget.userRole == 'subadmin' ||
+      widget.userRole == 'techincharge';
+
   @override
   void initState() {
     super.initState();
-    // Default to self-view; employees don't see extra options
-    _viewMode = 'self';
+    // Default to self-view; employees don't see extra options.
+    // Manager roles can override via initialViewMode (from dashboard cards).
+    if (_isManagerRole &&
+        widget.initialViewMode.toLowerCase() == 'employee') {
+      _viewMode = 'employee';
+    } else {
+      _viewMode = 'self';
+    }
     _fetchTasks();
-    if (widget.userRole == 'admin') {
+    if (_isManagerRole) {
       _loadEmployees();
     }
   }
@@ -92,6 +114,38 @@ class _TasksScreenState extends State<TasksScreen> {
             const SizedBox(height: 10),
             _buildEmployeeSelector(),
           ],
+        ],
+      ),
+    );
+  }
+
+  /// Header used when the view mode is locked from the dashboard cards.
+  /// For employee mode, we still want to show which employee's tasks
+  /// are being viewed, and allow changing the employee.
+  Widget _buildLockedAdminHeader() {
+    if (_viewMode != 'employee') {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Employee tasks',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: Colors.black87,
+            ),
+          ),
+          const SizedBox(height: 8),
+          _buildEmployeeSelector(),
         ],
       ),
     );
@@ -247,7 +301,7 @@ class _TasksScreenState extends State<TasksScreen> {
       String userId = widget.userId;
       String userRole = widget.userRole;
 
-      if (widget.userRole == 'admin' && _viewMode == 'employee') {
+      if (_isManagerRole && _viewMode == 'employee') {
         // When viewing employee tasks, require a selected employee
         if (_selectedEmployeeId == null) {
           setState(() {
@@ -269,8 +323,8 @@ class _TasksScreenState extends State<TasksScreen> {
         final List<dynamic> tasksData = response['data'] ?? [];
         var tasks = tasksData.map((json) => Task.fromJson(json)).toList();
 
-        // For admin self view, show only tasks that belong to the admin
-        if (widget.userRole == 'admin' && _viewMode == 'self') {
+        // For manager self view, show only tasks that belong to the manager
+        if (_isManagerRole && _viewMode == 'self') {
           tasks = tasks
               .where((task) =>
                   task.assignedTo == widget.userId ||
@@ -345,14 +399,55 @@ class _TasksScreenState extends State<TasksScreen> {
       final response = await UserService.getUsers(perPage: 100);
       if (response['status'] == 'success') {
         final List<dynamic> data = response['data'] ?? [];
+
+        String _mapAppRole(Map<String, dynamic> u) {
+          final roleId = u['roleId']?.toString();
+          switch (roleId) {
+            case 'R001':
+              return 'admin';
+            case 'R006':
+              return 'subadmin';
+            case 'R007':
+              return 'techincharge';
+            default:
+              return 'employee';
+          }
+        }
+
+        bool _canCurrentUserAssignTo(String appRole) {
+          switch (widget.userRole) {
+            case 'admin':
+              // Admin -> subadmin, techincharge, employee
+              return appRole == 'subadmin' ||
+                  appRole == 'techincharge' ||
+                  appRole == 'employee';
+            case 'subadmin':
+              // Subadmin -> techincharge, employee
+              return appRole == 'techincharge' || appRole == 'employee';
+            case 'techincharge':
+              // Tech incharge -> employee only
+              return appRole == 'employee';
+            default:
+              return false;
+          }
+        }
+
         setState(() {
           _employees = data
-              .map<Map<String, dynamic>>((e) => {
-                    'id': e['id']?.toString() ?? '',
-                    'name': e['name']?.toString() ?? 'Unknown',
-                    'employeeCode': e['employeeCode']?.toString() ?? '',
-                  })
-              .where((e) => e['id'].toString().isNotEmpty)
+              .map<Map<String, dynamic>?>((raw) {
+                final map = Map<String, dynamic>.from(raw as Map);
+                final appRole = _mapAppRole(map);
+                if (!_canCurrentUserAssignTo(appRole)) return null;
+                final id = map['id']?.toString() ?? '';
+                if (id.isEmpty) return null;
+                return {
+                  'id': id,
+                  'name': map['name']?.toString() ?? 'Unknown',
+                  'employeeCode': map['employeeCode']?.toString() ?? '',
+                  'role': appRole,
+                };
+              })
+              .whereType<Map<String, dynamic>>()
               .toList();
           _isEmployeesLoading = false;
         });
@@ -396,15 +491,23 @@ class _TasksScreenState extends State<TasksScreen> {
 
   Color _getSubtaskStatusColor(String status) => _getStatusColor(status);
 
+  bool _canChangeTaskStatus(Task task) {
+    return task.assignedTo == widget.userId;
+  }
+
   Future<void> _updateSubtaskStatus(Task task, int index, String newStatus) async {
     final list = task.subtasksWithStatus;
     if (index < 0 || index >= list.length) return;
     final updated = list.asMap().entries.map((e) {
       final st = e.value;
-      return {
+      final map = <String, dynamic>{
         'text': st.text,
         'status': e.key == index ? newStatus : st.status,
       };
+      if (st.needHelpNote != null && st.needHelpNote!.isNotEmpty) {
+        map['need_help_note'] = st.needHelpNote;
+      }
+      return map;
     }).toList();
     try {
       await TaskService.updateTask(task.id, {'subtasks': updated});
@@ -533,7 +636,10 @@ class _TasksScreenState extends State<TasksScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            if (widget.userRole == 'admin') _buildAdminModeSelector(),
+            if (_isManagerRole)
+              widget.lockViewMode
+                  ? _buildLockedAdminHeader()
+                  : _buildAdminModeSelector(),
             _buildFilterChips(),
             Expanded(
               child: _isLoading
@@ -549,12 +655,48 @@ class _TasksScreenState extends State<TasksScreen> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () async {
+          // When admin is in "Employee Tasks" view, require an employee selection
+          if (widget.userRole == 'admin' && _viewMode == 'employee') {
+            final noEmployeeSelected = _selectedEmployeeId == null ||
+                _selectedEmployeeId!.trim().isEmpty;
+            if (noEmployeeSelected) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text('Please select an employee first'),
+                  behavior: SnackBarBehavior.floating,
+                  margin: const EdgeInsets.all(16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+              );
+              return;
+            }
+          }
+
+          CreateTaskAssignMode? assignMode;
+          String? assignedToEmployeeId;
+          String? assignedToEmployeeName;
+          if (widget.userRole == 'admin') {
+            if (_viewMode == 'self') {
+              assignMode = CreateTaskAssignMode.self;
+            } else if (_viewMode == 'employee' &&
+                _selectedEmployeeId != null &&
+                _selectedEmployeeId!.trim().isNotEmpty) {
+              assignMode = CreateTaskAssignMode.employee;
+              assignedToEmployeeId = _selectedEmployeeId;
+              assignedToEmployeeName = _selectedEmployeeName;
+            }
+          }
           final result = await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => CreateTaskScreen(
                 userId: widget.userId,
                 userRole: widget.userRole,
+                assignMode: assignMode,
+                assignedToEmployeeId: assignedToEmployeeId,
+                assignedToEmployeeName: assignedToEmployeeName,
               ),
             ),
           );
@@ -668,14 +810,27 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Widget _buildEmptyView() {
+    final bool isAdminEmployeeView =
+        widget.userRole == 'admin' && _viewMode == 'employee';
+
+    final String title =
+        isAdminEmployeeView ? 'Select Employee' : 'No Tasks Found';
+    final String subtitle = isAdminEmployeeView
+        ? 'Choose an employee to view their tasks.'
+        : 'Create your first task to get started';
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.task_outlined, size: 80, color: Colors.grey.shade400),
+          Icon(
+            Icons.task_outlined,
+            size: 80,
+            color: Colors.grey.shade400,
+          ),
           const SizedBox(height: 16),
           Text(
-            'No Tasks Found',
+            title,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.bold,
@@ -684,8 +839,12 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Create your first task to get started',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+            subtitle,
+            style: TextStyle(
+              fontSize: 14,
+              color: Colors.grey.shade500,
+            ),
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -835,73 +994,126 @@ class _TasksScreenState extends State<TasksScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  ...task.subtasksWithStatus.take(3).toList().asMap().entries.map(
+                  ...task.subtasksWithStatus.asMap().entries.map(
                     (entry) {
                       final idx = entry.key;
                       final st = entry.value;
                       final color = _getSubtaskStatusColor(st.status);
+                      final showSubtaskHelp = st.status == 'need_help' &&
+                          st.needHelpNote != null &&
+                          st.needHelpNote!.isNotEmpty;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Expanded(
-                              child: Text(
-                                st.text,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.grey.shade800,
-                                  decoration: st.status == 'completed'
-                                      ? TextDecoration.lineThrough
-                                      : null,
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    st.text,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.grey.shade800,
+                                      decoration: st.status == 'completed'
+                                          ? TextDecoration.lineThrough
+                                          : null,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                                const SizedBox(width: 6),
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: _canChangeTaskStatus(task)
+                                        ? () => _showSubtaskStatusPicker(
+                                              context: context,
+                                              currentStatus: st.status,
+                                              onSelected: (s) =>
+                                                  _updateSubtaskStatus(
+                                                      task, idx, s),
+                                            )
+                                        : null,
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: color.withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                            color: color, width: 1.5),
+                                      ),
+                                      child: Icon(
+                                        Icons.flag,
+                                        size: 16,
+                                        color: _canChangeTaskStatus(task)
+                                            ? color
+                                            : color.withValues(alpha: 0.5),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 6),
-                            Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: () => _showSubtaskStatusPicker(
-                                  context: context,
-                                  currentStatus: st.status,
-                                  onSelected: (s) =>
-                                      _updateSubtaskStatus(task, idx, s),
-                                ),
-                                borderRadius: BorderRadius.circular(20),
+                            if (showSubtaskHelp) ...[
+                              const SizedBox(height: 6),
+                              Padding(
+                                padding: const EdgeInsets.only(left: 8),
                                 child: Container(
-                                  padding: const EdgeInsets.all(6),
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 8),
                                   decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.15),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: color, width: 1.5),
+                                    color: Colors.red.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                        color: Colors.red.shade300, width: 1.5),
                                   ),
-                                  child: Icon(
-                                    Icons.flag,
-                                    size: 16,
-                                    color: color,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Icon(Icons.help_outline,
+                                              size: 16,
+                                              color: Colors.red.shade700),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            'Need help',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.red.shade800,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        st.needHelpNote!,
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          color: Colors.grey.shade800,
+                                          height: 1.3,
+                                        ),
+                                        maxLines: 5,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       );
                     },
                   ),
-                  if (task.subtasksWithStatus.length > 3)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        '+${task.subtasksWithStatus.length - 3} more',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                    ),
                 ],
                 const SizedBox(height: 10),
                 Row(

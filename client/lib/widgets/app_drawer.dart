@@ -4,12 +4,16 @@ class AppDrawer extends StatelessWidget {
   final int selectedIndex;
   final Function(int) onItemSelected;
   final VoidCallback onLogout;
+  final String userName;
+  final String userRole;
 
   const AppDrawer({
     super.key,
     required this.selectedIndex,
     required this.onItemSelected,
     required this.onLogout,
+    required this.userName,
+    required this.userRole,
   });
 
   final List<Map<String, dynamic>> _menuItems = const [
@@ -36,6 +40,24 @@ class AppDrawer extends StatelessWidget {
   }
 
   Widget _buildDrawerHeader() {
+    String roleLabel;
+    switch (userRole) {
+      case 'admin':
+        roleLabel = 'Admin';
+        break;
+      case 'subadmin':
+        roleLabel = 'Sub Admin';
+        break;
+      case 'techincharge':
+        roleLabel = 'Tech Incharge';
+        break;
+      default:
+        roleLabel = 'Employee';
+        break;
+    }
+
+    final displayName = (userName).trim().isEmpty ? roleLabel : userName.trim();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(24, 60, 24, 24),
@@ -70,9 +92,9 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
-            'Admin Panel ETM',
-            style: TextStyle(
+          Text(
+            '$roleLabel Panel ETM',
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 22,
               fontWeight: FontWeight.bold,
@@ -87,8 +109,18 @@ class AppDrawer extends StatelessWidget {
               color: Color.fromARGB(220, 255, 255, 255),
               fontSize: 16,
               fontWeight: FontWeight.w500,
-              height: 1.4, // better line spacing
+              height: 1.4,
               letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            displayName,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],

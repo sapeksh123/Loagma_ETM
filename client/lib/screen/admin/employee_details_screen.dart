@@ -26,10 +26,19 @@ class EmployeeDetailsScreen extends StatelessWidget {
     final country = (employee['country'] ?? '').toString();
 
     String primaryRoleLabel;
-    if (roleId == 'R001') {
-      primaryRoleLabel = 'Admin';
-    } else {
-      primaryRoleLabel = 'Employee';
+    switch (roleId) {
+      case 'R001':
+        primaryRoleLabel = 'Admin';
+        break;
+      case 'R006':
+        primaryRoleLabel = 'Sub Admin';
+        break;
+      case 'R007':
+        primaryRoleLabel = 'Tech Incharge';
+        break;
+      default:
+        primaryRoleLabel = 'Employee';
+        break;
     }
 
     return Scaffold(

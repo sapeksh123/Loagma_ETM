@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
 import '../../widgets/app_drawer.dart';
 import '../../services/dashboard_service.dart';
+import '../../services/task_service.dart';
+import '../../models/task_model.dart';
 import 'employees_screen.dart';
 import 'tasks_screen.dart';
 import 'attendance_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
-  const AdminDashboard({super.key});
+  final String? userId;
+  final String? userName;
+  final String userRole;
+
+  const AdminDashboard({
+    super.key,
+    this.userId,
+    this.userName,
+    this.userRole = 'admin',
+  });
 
   @override
   State<AdminDashboard> createState() => _AdminDashboardState();
@@ -14,11 +25,15 @@ class AdminDashboard extends StatefulWidget {
 
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
+  String _tasksInitialViewMode = 'self'; // 'self' or 'employee'
+  bool _lockTasksViewMode = false;
 
   bool _isStatsLoading = true;
   int _totalEmployees = 0;
   int _activeEmployees = 0;
-  int _pendingTasks = 0;
+  int _pendingSelfTasks = 0;
+  int _pendingEmployeeTasks = 0;
+  bool _hasTaskBreakdown = false;
   int _presentToday = 0;
 
   final List<String> _menuTitles = [
@@ -50,21 +65,73 @@ class _AdminDashboardState extends State<AdminDashboard> {
     });
     try {
       final response = await DashboardService.getSummary();
+
+      int totalEmployees = 0;
+      int activeEmployees = 0;
+      int presentToday = 0;
+
+      int pendingSelfTasks = 0;
+      int pendingEmployeeTasks = 0;
+      bool hasBreakdown = false;
+
       if (response['status'] == 'success') {
         final data =
             (response['data'] as Map<String, dynamic>?) ?? <String, dynamic>{};
-        setState(() {
-          _totalEmployees = _asInt(data['employees_total']);
-          _activeEmployees = _asInt(data['employees_active']);
-          _pendingTasks = _asInt(data['tasks_pending']);
-          _presentToday = _asInt(data['present_today']);
-          _isStatsLoading = false;
-        });
-      } else {
-        setState(() {
-          _isStatsLoading = false;
-        });
+
+        totalEmployees = _asInt(data['employees_total']);
+        activeEmployees = _asInt(data['employees_active']);
+        presentToday = _asInt(data['present_today']);
+
+        // Optional breakdown coming directly from backend, if available.
+        final backendSelf =
+            _asInt(data['tasks_self_pending'] ?? data['tasks_pending_self']);
+        final backendEmployees = _asInt(
+            data['tasks_employee_pending'] ?? data['tasks_pending_employee']);
+
+        if (backendSelf > 0 || backendEmployees > 0) {
+          pendingSelfTasks = backendSelf;
+          pendingEmployeeTasks = backendEmployees;
+          hasBreakdown = true;
+        }
       }
+
+      // If backend did not provide a breakdown but we know the admin ID,
+      // fall back to computing it from the task list.
+      if (!hasBreakdown && widget.userId != null && widget.userId!.isNotEmpty) {
+        final tasksResponse =
+            await TaskService.getTasks(widget.userId!, widget.userRole);
+        if (tasksResponse['status'] == 'success') {
+          final List<dynamic> tasksData = tasksResponse['data'] ?? [];
+          final tasks =
+              tasksData.map<Task>((json) => Task.fromJson(json)).toList();
+
+          bool isPendingStatus(String status) {
+            return status == 'assigned' ||
+                status == 'in_progress' ||
+                status == 'paused' ||
+                status == 'need_help';
+          }
+
+          final selfTasks = tasks.where((t) =>
+              t.assignedTo == widget.userId && isPendingStatus(t.status));
+          final employeeTasks = tasks.where((t) =>
+              t.assignedTo != widget.userId && isPendingStatus(t.status));
+
+          pendingSelfTasks = selfTasks.length;
+          pendingEmployeeTasks = employeeTasks.length;
+          hasBreakdown = true;
+        }
+      }
+
+      setState(() {
+        _totalEmployees = totalEmployees;
+        _activeEmployees = activeEmployees;
+        _presentToday = presentToday;
+        _pendingSelfTasks = pendingSelfTasks;
+        _pendingEmployeeTasks = pendingEmployeeTasks;
+        _hasTaskBreakdown = hasBreakdown;
+        _isStatsLoading = false;
+      });
     } catch (e) {
       setState(() {
         _isStatsLoading = false;
@@ -223,9 +290,15 @@ class _AdminDashboardState extends State<AdminDashboard> {
           onItemSelected: (index) {
             setState(() {
               _selectedIndex = index;
+              if (index == 2) {
+                _tasksInitialViewMode = 'self';
+                _lockTasksViewMode = false; // opened from drawer, allow switching
+              }
             });
           },
           onLogout: () => _showLogoutConfirmation(context),
+          userName: widget.userName ?? '',
+          userRole: widget.userRole,
         ),
         body: _getSelectedScreen(),
       ),
@@ -262,12 +335,38 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 ),
                 _buildDashboardCard(
                   context,
-                  'Tasks',
+                  'Self Tasks',
                   Icons.task_alt,
                   Colors.orange,
-                  _isStatsLoading ? 'Loading...' : '$_pendingTasks Pending',
+                  _isStatsLoading
+                      ? 'Loading...'
+                      : _hasTaskBreakdown
+                          ? '$_pendingSelfTasks Pending'
+                          : 'Pending',
                   () {
-                    setState(() => _selectedIndex = 2);
+                    setState(() {
+                      _tasksInitialViewMode = 'self';
+                      _selectedIndex = 2;
+                      _lockTasksViewMode = true; // opened from card, lock mode
+                    });
+                  },
+                ),
+                _buildDashboardCard(
+                  context,
+                  'Employee Tasks',
+                  Icons.group_outlined,
+                  Colors.deepOrange,
+                  _isStatsLoading
+                      ? 'Loading...'
+                      : _hasTaskBreakdown
+                          ? '$_pendingEmployeeTasks Pending'
+                          : 'Pending',
+                  () {
+                    setState(() {
+                      _tasksInitialViewMode = 'employee';
+                      _selectedIndex = 2;
+                      _lockTasksViewMode = true; // opened from card, lock mode
+                    });
                   },
                 ),
                 _buildDashboardCard(
@@ -304,8 +403,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildTasksScreen() {
     return TasksScreen(
-      userId: 'admin-user-id', // TODO: Replace with actual user ID
-      userRole: 'admin',
+      userId: widget.userId ?? 'admin-user-id',
+      userRole: widget.userRole,
+      initialViewMode: _tasksInitialViewMode,
+      lockViewMode: _lockTasksViewMode,
     );
   }
 
