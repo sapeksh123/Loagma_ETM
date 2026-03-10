@@ -45,6 +45,7 @@ class _OtpScreenState extends State<OtpScreen> {
     try {
       final phone = ModalRoute.of(context)!.settings.arguments as String;
       final user = await AuthService.verifyOtp(phone, otp);
+      await AuthService.saveSession(user);
 
       setState(() => _isLoading = false);
 

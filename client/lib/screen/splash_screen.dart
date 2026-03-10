@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
-import 'dart:async';
+
+import '../../services/auth_service.dart';
+import 'admin/admin_dashboard.dart';
+import 'employee/employee_dashboard.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -39,11 +42,41 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller.forward();
 
-    Timer(const Duration(seconds: 3), () {
-      if (mounted) {
-        Navigator.pushReplacementNamed(context, '/login');
+    _checkSessionAndNavigate();
+  }
+
+  Future<void> _checkSessionAndNavigate() async {
+    await Future.delayed(const Duration(seconds: 2));
+    if (!mounted) return;
+    final user = await AuthService.getStoredUser();
+    if (!mounted) return;
+    if (user != null) {
+      if (user.role == 'employee') {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EmployeeDashboard(
+              userId: user.id,
+              userRole: user.role,
+              userName: user.name,
+            ),
+          ),
+        );
+      } else {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AdminDashboard(
+              userId: user.id,
+              userName: user.name,
+              userRole: user.role,
+            ),
+          ),
+        );
       }
-    });
+    } else {
+      Navigator.pushReplacementNamed(context, '/login');
+    }
   }
 
   @override

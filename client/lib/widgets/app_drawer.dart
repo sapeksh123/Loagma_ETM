@@ -22,6 +22,7 @@ class AppDrawer extends StatelessWidget {
     {'icon': Icons.task_alt, 'title': 'Tasks'},
     {'icon': Icons.access_time, 'title': 'Attendance'},
     {'icon': Icons.bar_chart, 'title': 'Reports'},
+    {'icon': Icons.note, 'title': 'Notepad'},
     {'icon': Icons.settings, 'title': 'Settings'},
   ];
 

@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../widgets/app_drawer.dart';
+import '../../services/auth_service.dart';
 import '../../services/dashboard_service.dart';
 import '../../services/task_service.dart';
 import '../../models/task_model.dart';
 import 'employees_screen.dart';
 import 'tasks_screen.dart';
 import 'attendance_screen.dart';
+import 'notepad_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   final String? userId;
@@ -42,6 +44,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
     'Tasks',
     'Attendance',
     'Reports',
+    "Notepad",
     'Settings',
   ];
 
@@ -152,6 +155,8 @@ class _AdminDashboardState extends State<AdminDashboard> {
       case 4:
         return _buildReportsScreen();
       case 5:
+        return _buildNotepadScreen();
+      case 6:
         return _buildSettingsScreen();
       default:
         return _buildDashboardHome();
@@ -233,7 +238,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
 
     if (confirmed == true && context.mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
+      await AuthService.logout();
+      if (context.mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 
@@ -245,7 +253,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
         if (didPop) return;
         final shouldPop = await _showExitConfirmation(context);
         if (shouldPop && context.mounted) {
-          Navigator.pushReplacementNamed(context, '/login');
+          await AuthService.logout();
+          if (context.mounted) {
+            Navigator.pushReplacementNamed(context, '/login');
+          }
         }
       },
       child: Scaffold(
@@ -274,6 +285,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           elevation: 0,
           actions: [
+ 
+            IconButton(
+              icon: const Icon(Icons.note_add_outlined),
+              onPressed: () {
+                setState(() => _selectedIndex = 5);
+              },
+            ),
+
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
               onPressed: () {},
@@ -389,6 +408,16 @@ class _AdminDashboardState extends State<AdminDashboard> {
                     setState(() => _selectedIndex = 4);
                   },
                 ),
+                 _buildDashboardCard(
+                  context,
+                  'Notepad',
+                  Icons.note_add_outlined,
+                  Colors.purple,
+                  'Take Notes',
+                  () {
+                    setState(() => _selectedIndex = 5);
+                  },
+                ),
               ],
             ),
           ],
@@ -429,6 +458,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
           const Text('View analytics and reports'),
         ],
       ),
+    );
+  }
+
+  Widget _buildNotepadScreen() {
+    return NotepadScreen(
+      userId: widget.userId ?? '',
+      userRole: widget.userRole,
+      userName: widget.userName,
     );
   }
 

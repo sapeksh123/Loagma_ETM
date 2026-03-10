@@ -5,7 +5,8 @@ import 'screen/auth/otp_screen.dart';
 import 'screen/admin/admin_dashboard.dart';
 // Employee dashboard is pushed with runtime user data from OtpScreen.
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MyApp());
 }
 

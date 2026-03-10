@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../services/task_service.dart';
 import '../../services/user_service.dart';
 import '../../models/task_model.dart';
@@ -37,6 +38,7 @@ class _TasksScreenState extends State<TasksScreen> {
   bool _isEmployeesLoading = false;
   String? _selectedEmployeeId;
   String? _selectedEmployeeName;
+  String? _selectedEmployeePhone;
 
   bool get _isManagerRole =>
       widget.userRole == 'admin' ||
@@ -112,7 +114,13 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
           if (_viewMode == 'employee') ...[
             const SizedBox(height: 10),
-            _buildEmployeeSelector(),
+            Row(
+              children: [
+                Expanded(child: _buildEmployeeSelector()),
+                const SizedBox(width: 8),
+                _buildEmployeeContactButtons(),
+              ],
+            ),
           ],
         ],
       ),
@@ -145,10 +153,80 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          _buildEmployeeSelector(),
+          Row(
+            children: [
+              Expanded(child: _buildEmployeeSelector()),
+              const SizedBox(width: 8),
+              _buildEmployeeContactButtons(),
+            ],
+          ),
         ],
       ),
     );
+  }
+
+  Widget _buildEmployeeContactButtons() {
+    final phone = _selectedEmployeePhone;
+    final hasPhone = phone != null && phone.trim().isNotEmpty;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildCircleIconButton(
+          icon: Icons.call,
+          color: Colors.grey,
+          enabled: hasPhone,
+          onTap: hasPhone ? () => _launchPhone(phone) : null,
+        ),
+        const SizedBox(width: 6),
+        _buildCircleIconButton(
+          icon: Icons.call,
+          color: Colors.green,
+          enabled: hasPhone,
+          onTap: hasPhone ? () => _launchWhatsApp(phone) : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCircleIconButton({
+    required IconData icon,
+    required Color color,
+    required bool enabled,
+    VoidCallback? onTap,
+  }) {
+    final bg = enabled ? color.withValues(alpha: 0.1) : Colors.grey.shade200;
+    final fg = enabled ? color : Colors.grey.shade400;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: bg,
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 18, color: fg),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _launchPhone(String phone) async {
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
+
+  Future<void> _launchWhatsApp(String phone) async {
+    final normalized = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (normalized.isEmpty) return;
+    final uri = Uri.parse('https://wa.me/$normalized');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
   }
 
   Widget _buildModeButton({
@@ -270,6 +348,7 @@ class _TasksScreenState extends State<TasksScreen> {
           setState(() {
             _selectedEmployeeId = result['id'] as String?;
             _selectedEmployeeName = result['name'] as String?;
+            _selectedEmployeePhone = result['phone'] as String?;
           });
           _fetchTasks();
         }
@@ -323,12 +402,13 @@ class _TasksScreenState extends State<TasksScreen> {
         final List<dynamic> tasksData = response['data'] ?? [];
         var tasks = tasksData.map((json) => Task.fromJson(json)).toList();
 
-        // For manager self view, show only tasks that belong to the manager
+        // For manager self view, show only true self tasks:
+        // created_by == manager AND assigned_to == manager.
         if (_isManagerRole && _viewMode == 'self') {
           tasks = tasks
               .where((task) =>
-                  task.assignedTo == widget.userId ||
-                  task.createdBy == widget.userId)
+                  task.createdBy == widget.userId &&
+                  task.assignedTo == widget.userId)
               .toList();
         }
 
@@ -444,6 +524,7 @@ class _TasksScreenState extends State<TasksScreen> {
                   'id': id,
                   'name': map['name']?.toString() ?? 'Unknown',
                   'employeeCode': map['employeeCode']?.toString() ?? '',
+                  'phone': map['contactNumber']?.toString() ?? '',
                   'role': appRole,
                 };
               })
@@ -869,6 +950,8 @@ class _TasksScreenState extends State<TasksScreen> {
   Widget _buildTaskCard(Task task) {
     final statusColor = _getStatusColor(task.status);
     final priorityColor = _getPriorityColor(task.priority);
+    final isSelfTask = task.createdBy == task.assignedTo;
+    final isCreatedByCurrentUser = task.createdBy == widget.userId;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -962,6 +1045,29 @@ class _TasksScreenState extends State<TasksScreen> {
                         ],
                       ),
                     ),
+                    if (isCreatedByCurrentUser) ...[
+                      const SizedBox(width: 4),
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, size: 18),
+                        onSelected: (value) async {
+                          if (value == 'edit') {
+                            await _openAdminTaskEdit(task);
+                          } else if (value == 'delete') {
+                            await _deleteTask(task);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text('Edit task'),
+                          ),
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text('Delete task'),
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
                 if (task.descriptionOnly != null &&
@@ -1185,11 +1291,423 @@ class _TasksScreenState extends State<TasksScreen> {
                     ],
                   ),
                 ],
+                const SizedBox(height: 4),
+                Builder(
+                  builder: (context) {
+                    String? label;
+                    if (task.assignedTo.isNotEmpty &&
+                        task.createdBy == task.assignedTo) {
+                      label = 'Self task';
+                    } else if (task.creatorName != null &&
+                        task.creatorName!.isNotEmpty) {
+                      label = 'Assigned by: ${task.creatorName}';
+                    } else if (task.createdBy.isNotEmpty) {
+                      label = 'Assigned by admin';
+                    }
+                    if (label == null) return const SizedBox.shrink();
+                    return Row(
+                      children: [
+                        Icon(
+                          isSelfTask ? Icons.person : Icons.admin_panel_settings,
+                          size: 14,
+                          color: Colors.grey.shade500,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.grey.shade600,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ],
             ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _openAdminTaskEdit(Task task) async {
+    final titleController = TextEditingController(text: task.title);
+    final descriptionController =
+        TextEditingController(text: task.descriptionOnly ?? '');
+    String taskStatus = task.status;
+    String priority = task.priority;
+    String category = task.category;
+    DateTime? deadlineDate =
+        task.deadlineDate != null ? DateTime.tryParse(task.deadlineDate!) : null;
+    TimeOfDay? deadlineTime = task.deadlineTime != null
+        ? TimeOfDay(
+            hour: int.tryParse(task.deadlineTime!.split(':')[0]) ?? 0,
+            minute: int.tryParse(task.deadlineTime!.split(':')[1]) ?? 0,
+          )
+        : null;
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16,
+            right: 16,
+            top: 12,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: StatefulBuilder(
+            builder: (context, setModalState) {
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Edit Task',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close),
+                          onPressed: () => Navigator.pop(ctx),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Task Title',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        hintText: 'Title',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Description',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    TextField(
+                      controller: descriptionController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Description',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 12),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Task Status',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _taskStatuses.map((s) {
+                        final selected = taskStatus == s;
+                        final color = _getStatusColor(s);
+                        return ChoiceChip(
+                          label: Text(
+                            s.replaceAll('_', ' '),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color:
+                                  selected ? color : Colors.grey.shade700,
+                            ),
+                          ),
+                          selected: selected,
+                          onSelected: (_) =>
+                              setModalState(() => taskStatus = s),
+                          selectedColor: color.withValues(alpha: 0.2),
+                          backgroundColor: Colors.grey.shade100,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Priority',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: ['low', 'medium', 'high', 'critical']
+                          .map((p) {
+                        final selected = priority == p;
+                        final color = _getPriorityColor(p);
+                        return ChoiceChip(
+                          label: Text(
+                            p[0].toUpperCase() + p.substring(1),
+                          ),
+                          selected: selected,
+                          onSelected: (_) =>
+                              setModalState(() => priority = p),
+                          selectedColor: color.withValues(alpha: 0.2),
+                          backgroundColor: Colors.grey.shade100,
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Category',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: const [
+                        'daily',
+                        'project',
+                        'personal',
+                        'monthly',
+                        'quarterly',
+                        'yearly',
+                        'other',
+                      ].map((c) {
+                        return Builder(
+                          builder: (context) {
+                            final selected = category == c;
+                            return ChoiceChip(
+                              label: Text(
+                                  c[0].toUpperCase() + c.substring(1)),
+                              selected: selected,
+                              onSelected: (_) =>
+                                  setModalState(() => category = c),
+                              selectedColor:
+                                  const Color(0xFFceb56e).withValues(
+                                      alpha: 0.2),
+                              backgroundColor: Colors.grey.shade100,
+                            );
+                          },
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Deadline',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final picked = await showDatePicker(
+                                context: context,
+                                initialDate:
+                                    deadlineDate ?? DateTime.now(),
+                                firstDate: DateTime(2020),
+                                lastDate: DateTime(2100),
+                              );
+                              if (picked != null) {
+                                setModalState(() => deadlineDate = picked);
+                              }
+                            },
+                            icon:
+                                const Icon(Icons.calendar_today, size: 18),
+                            label: Text(
+                              deadlineDate != null
+                                  ? '${deadlineDate!.day}/${deadlineDate!.month}/${deadlineDate!.year}'
+                                  : 'Date',
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () async {
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime: deadlineTime ??
+                                    TimeOfDay.now(),
+                              );
+                              if (picked != null) {
+                                setModalState(() => deadlineTime = picked);
+                              }
+                            },
+                            icon:
+                                const Icon(Icons.access_time, size: 18),
+                            label: Text(
+                              deadlineTime != null
+                                  ? '${deadlineTime!.hour}:${deadlineTime!.minute.toString().padLeft(2, '0')}'
+                                  : 'Time',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          final updatedData = {
+                            'title': titleController.text.trim(),
+                            'description':
+                                descriptionController.text.trim().isEmpty
+                                    ? null
+                                    : descriptionController.text.trim(),
+                            'status': taskStatus,
+                            'priority': priority,
+                            'category': category,
+                          };
+                          final d = deadlineDate;
+                          if (d != null) {
+                            updatedData['deadline_date'] =
+                                '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+                          }
+                          final t = deadlineTime;
+                          if (t != null) {
+                            updatedData['deadline_time'] =
+                                '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
+                          }
+                          try {
+                            await TaskService.updateTask(
+                                task.id, updatedData);
+                            if (!mounted) return;
+                            Navigator.pop(ctx);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Task updated successfully'),
+                              ),
+                            );
+                            _fetchTasks();
+                          } catch (e) {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  e
+                                      .toString()
+                                      .replaceFirst('Exception: ', '')
+                                      .trim(),
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                        child: const Text(
+                          'Save',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteTask(Task task) async {
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: const Text('Delete task?'),
+            content: const Text(
+              'This will permanently delete the task and its subtasks.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirmed) return;
+    try {
+      await TaskService.deleteTask(task.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Task deleted')),
+      );
+      _fetchTasks();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', '').trim(),
+          ),
+        ),
+      );
+    }
   }
 }

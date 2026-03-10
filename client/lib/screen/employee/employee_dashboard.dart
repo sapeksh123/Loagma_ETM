@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../widgets/attendance_card.dart';
 import '../../models/task_model.dart';
+import '../../services/auth_service.dart';
 import '../../services/task_service.dart';
 import '../admin/create_task_screen.dart';
 
@@ -271,7 +272,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
 
     if (confirmed == true && context.mounted) {
-      Navigator.pushReplacementNamed(context, '/login');
+      await AuthService.logout();
+      if (context.mounted) {
+        Navigator.pushReplacementNamed(context, '/login');
+      }
     }
   }
 
@@ -283,7 +287,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         if (didPop) return;
         final shouldPop = await _showExitConfirmation(context);
         if (shouldPop && context.mounted) {
-          Navigator.pushReplacementNamed(context, '/login');
+          await AuthService.logout();
+          if (context.mounted) {
+            Navigator.pushReplacementNamed(context, '/login');
+          }
         }
       },
       child: DefaultTabController(
@@ -1797,6 +1804,81 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        if (task.createdBy == widget.userId)
+                          SizedBox(
+                            width: double.infinity,
+                            height: 44,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.delete_outline,
+                                  color: Colors.red),
+                              label: const Text(
+                                'Delete Task',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: Colors.red),
+                              ),
+                              onPressed: () async {
+                                final confirm = await showDialog<bool>(
+                                      context: context,
+                                      builder: (ctx) => AlertDialog(
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(16),
+                                        ),
+                                        title: const Text('Delete task?'),
+                                        content: const Text(
+                                            'This will permanently delete this task.'),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, false),
+                                            child: const Text('Cancel'),
+                                          ),
+                                          ElevatedButton(
+                                            onPressed: () =>
+                                                Navigator.pop(ctx, true),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.red,
+                                              foregroundColor: Colors.white,
+                                            ),
+                                            child: const Text('Delete'),
+                                          ),
+                                        ],
+                                      ),
+                                    ) ??
+                                    false;
+                                if (!confirm) return;
+                                try {
+                                  await TaskService.deleteTask(task.id);
+                                  if (!mounted) return;
+                                  for (final e in subtaskEntries) {
+                                    e.controller.dispose();
+                                  }
+                                  Navigator.pop(context);
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Task deleted'),
+                                    ),
+                                  );
+                                  _fetchTasks();
+                                } catch (e) {
+                                  if (!mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        e
+                                            .toString()
+                                            .replaceFirst('Exception: ', '')
+                                            .trim(),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                          ),
                         const SizedBox(height: 24),
                       ],
                     ),

@@ -6,6 +6,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\RoleController;
 use App\Http\Controllers\DepartmentController;
 use App\Http\Controllers\TaskController;
+use App\Http\Controllers\NoteController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
 
@@ -47,6 +48,10 @@ Route::get('/tasks/{id}', [TaskController::class, 'show']);
 Route::put('/tasks/{id}', [TaskController::class, 'update']);
 Route::delete('/tasks/{id}', [TaskController::class, 'destroy']);
 Route::patch('/tasks/{id}/status', [TaskController::class, 'updateStatus']);
+
+// Notes Routes
+Route::get('/notes/me', [NoteController::class, 'showMe']);
+Route::put('/notes/me', [NoteController::class, 'upsertMe']);
 
 // Attendance Routes
 Route::get('/attendance/today', [AttendanceController::class, 'today']);
