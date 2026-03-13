@@ -9,6 +9,8 @@ use App\Http\Controllers\TaskController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\ChatController;
 
 Route::get('/health', function () {
     return response()->json([
@@ -63,3 +65,16 @@ Route::post('/attendance/break/end', [AttendanceController::class, 'endBreak']);
 
 // Dashboard summary
 Route::get('/dashboard/summary', [DashboardController::class, 'summary']);
+
+// Notification Routes
+Route::get('/notifications', [NotificationController::class, 'index']);
+Route::post('/notifications', [NotificationController::class, 'store']);
+Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead']);
+
+// Chat Routes
+Route::get('/chat/threads', [ChatController::class, 'listThreads']);
+Route::post('/chat/threads/direct', [ChatController::class, 'openDirectThread']);
+Route::post('/chat/threads/broadcast', [ChatController::class, 'openBroadcastThread']);
+Route::get('/chat/threads/{id}/messages', [ChatController::class, 'listMessages']);
+Route::post('/chat/threads/{id}/messages', [ChatController::class, 'sendMessage']);
+Route::post('/chat/threads/{id}/read', [ChatController::class, 'markThreadRead']);

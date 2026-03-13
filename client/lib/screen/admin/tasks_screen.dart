@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../services/task_service.dart';
 import '../../services/user_service.dart';
+import '../../services/notification_service.dart';
 import '../../models/task_model.dart';
 import 'create_task_screen.dart';
 
@@ -41,6 +42,28 @@ class _TasksScreenState extends State<TasksScreen> {
   String? _selectedEmployeeName;
   String? _selectedEmployeePhone;
   bool _filtersExpanded = false;
+
+  // Preset reminder/update texts for the help dialog
+  static const List<Map<String, String>> _presetMessages = [
+    {
+      'id': 'pending',
+      'label': 'Reminder: pending task',
+      'message':
+          'Reminder: This task is still pending. Please review and update the status.'
+    },
+    {
+      'id': 'deadline',
+      'label': 'Update: deadline approaching',
+      'message':
+          'Update: The deadline for this task is approaching. Please prioritize and complete it as soon as possible.'
+    },
+    {
+      'id': 'details_changed',
+      'label': 'Update: task details changed',
+      'message':
+          'Update: Some details for this task have changed. Please open the task and review the latest information.'
+    },
+  ];
 
   bool get _isManagerRole =>
       widget.userRole == 'admin' ||
@@ -1566,6 +1589,20 @@ class _TasksScreenState extends State<TasksScreen> {
                         ],
                       ),
                     ),
+                    if (_isManagerRole && _viewMode == 'employee') ...[
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(
+                          Icons.help_outline,
+                          size: 18,
+                          color: Color(0xFF9E9E9E),
+                        ),
+                        tooltip: 'Send reminder to employee',
+                        onPressed: () {
+                          _showTaskReminderDialog(task: task);
+                        },
+                      ),
+                    ],
                     if (task.createdBy == widget.userId) ...[
                       const SizedBox(width: 4),
                       PopupMenuButton<String>(
@@ -1708,6 +1745,25 @@ class _TasksScreenState extends State<TasksScreen> {
                                   ),
                                 ),
                                 const SizedBox(width: 6),
+                                if (_isManagerRole &&
+                                    _viewMode == 'employee') ...[
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.help_outline,
+                                      size: 18,
+                                      color: Color(0xFF9E9E9E),
+                                    ),
+                                    tooltip:
+                                        'Send reminder for this subtask to employee',
+                                    onPressed: () {
+                                      _showTaskReminderDialog(
+                                        task: task,
+                                        subtaskIndex: idx,
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 2),
+                                ],
                                 Material(
                                   color: Colors.transparent,
                                   child: InkWell(
@@ -2687,5 +2743,189 @@ class _TasksScreenState extends State<TasksScreen> {
         );
       },
     );
+  }
+
+  /// Show a reminder/update dialog for a specific task or subtask.
+  ///
+  /// Only available when a manager is viewing Employee Tasks with a selected employee.
+  Future<void> _showTaskReminderDialog({
+    required Task task,
+    int? subtaskIndex,
+  }) async {
+    if (!_isManagerRole || _viewMode != 'employee') {
+      return;
+    }
+    if (_selectedEmployeeId == null || _selectedEmployeeId!.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select an employee first'),
+        ),
+      );
+      return;
+    }
+
+    final employeeId = _selectedEmployeeId!;
+    final senderRole = widget.userRole.toLowerCase();
+    String selectedPresetId = _presetMessages.first['id']!;
+    final customController = TextEditingController();
+    String messageType = 'reminder';
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              const Icon(Icons.help_outline, color: Color(0xFFceb56e)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  subtaskIndex != null
+                      ? 'Send reminder for subtask'
+                      : 'Send reminder for task',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  subtaskIndex != null &&
+                          subtaskIndex >= 0 &&
+                          subtaskIndex < task.subtasksWithStatus.length
+                      ? task.subtasksWithStatus[subtaskIndex].text
+                      : task.title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'Preset message',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Column(
+                  children: _presetMessages.map((preset) {
+                    final id = preset['id']!;
+                    final label = preset['label']!;
+                    final isSelected = selectedPresetId == id;
+                    return RadioListTile<String>(
+                      value: id,
+                      groupValue: selectedPresetId,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight:
+                              isSelected ? FontWeight.w600 : FontWeight.w400,
+                        ),
+                      ),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        (ctx as Element).markNeedsBuild();
+                        selectedPresetId = value;
+                        if (value == 'pending' || value == 'deadline') {
+                          messageType = 'reminder';
+                        } else {
+                          messageType = 'update';
+                        }
+                      },
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Additional message (optional)',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: customController,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText:
+                        'Add any specific details or updates for the employee...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Send'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result != true || !mounted) return;
+
+    final preset = _presetMessages
+        .firstWhere((p) => p['id'] == selectedPresetId, orElse: () {
+      return _presetMessages.first;
+    });
+    final baseMessage = preset['message'] ?? '';
+    final extra = customController.text.trim();
+    final fullMessage =
+        extra.isEmpty ? baseMessage : '$baseMessage\n\nNote: $extra';
+
+    try {
+      await NotificationService.sendTaskReminder(
+        senderRole: senderRole,
+        employeeId: employeeId,
+        taskId: task.id,
+        subtaskIndex: subtaskIndex,
+        type: messageType,
+        message: fullMessage,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Reminder sent to employee'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', '').trim(),
+          ),
+        ),
+      );
+    }
   }
 }

@@ -7,6 +7,7 @@ import '../../models/task_model.dart';
 import 'employees_screen.dart';
 import 'tasks_screen.dart';
 import 'attendance_screen.dart';
+import 'admin_chat_list_screen.dart';
 import 'notepad_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -285,14 +286,36 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           elevation: 0,
           actions: [
- 
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline),
+              tooltip: 'Chat',
+              onPressed: () {
+                if (widget.userId == null || widget.userId!.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content:
+                          Text('User id missing. Please re-login as admin.'),
+                    ),
+                  );
+                  return;
+                }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AdminChatListScreen(
+                      userId: widget.userId!,
+                      userRole: widget.userRole,
+                    ),
+                  ),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.note_add_outlined),
               onPressed: () {
                 setState(() => _selectedIndex = 5);
               },
             ),
-
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
               onPressed: () {},

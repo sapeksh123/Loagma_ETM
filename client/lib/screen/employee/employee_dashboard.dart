@@ -4,6 +4,10 @@ import '../../widgets/attendance_card.dart';
 import '../../models/task_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/task_service.dart';
+import '../../services/notification_service.dart';
+import '../../services/chat_service.dart';
+import 'employee_notifications_screen.dart';
+import 'employee_chat_list_screen.dart';
 import '../admin/create_task_screen.dart';
 
 class _EditSubtaskEntry {
@@ -36,11 +40,15 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   String? _tasksError;
   /// Status filter: null = all, else one of assigned, in_progress, completed, paused, need_help
   String? _statusFilter;
+  int _unreadNotifications = 0;
+  int _unreadChats = 0;
 
   @override
   void initState() {
     super.initState();
     _fetchTasks();
+    _loadNotificationsSummary();
+    _loadChatSummary();
   }
 
   Future<void> _fetchTasks() async {
@@ -74,6 +82,38 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             e.toString().replaceFirst('Exception: ', '').trim();
         _isLoadingTasks = false;
       });
+    }
+  }
+
+  Future<void> _loadNotificationsSummary() async {
+    try {
+      final list =
+          await NotificationService.fetchNotifications(widget.userId);
+      if (!mounted) return;
+      setState(() {
+        _unreadNotifications =
+            list.where((n) => !n.isRead).length.clamp(0, 99);
+      });
+    } catch (_) {
+      // Ignore errors for badge; keep badge at 0 on failure.
+    }
+  }
+
+  Future<void> _loadChatSummary() async {
+    try {
+      final threads = await ChatService.getThreads(
+        userId: widget.userId,
+        role: widget.userRole,
+      );
+      if (!mounted) return;
+      final unread = threads
+          .where((t) => t.unreadCount > 0)
+          .fold<int>(0, (sum, t) => sum + t.unreadCount);
+      setState(() {
+        _unreadChats = unread.clamp(0, 99);
+      });
+    } catch (_) {
+      // Ignore errors for badge.
     }
   }
 
@@ -316,8 +356,96 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 onPressed: () => _showStatusFilterPopup(context),
               ),
               IconButton(
-                icon: const Icon(Icons.notifications_outlined),
-                onPressed: () {},
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.chat_bubble_outline),
+                    if (_unreadChats > 0)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _unreadChats > 9
+                                ? '9+'
+                                : _unreadChats.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                tooltip: 'Chat',
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EmployeeChatListScreen(
+                        userId: widget.userId,
+                        userRole: widget.userRole,
+                      ),
+                    ),
+                  );
+                  _loadChatSummary();
+                },
+              ),
+              IconButton(
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.notifications_outlined),
+                    if (_unreadNotifications > 0)
+                      Positioned(
+                        right: -2,
+                        top: -2,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            _unreadNotifications > 9
+                                ? '9+'
+                                : _unreadNotifications.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                tooltip: 'Notifications',
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EmployeeNotificationsScreen(
+                        userId: widget.userId,
+                        userRole: widget.userRole,
+                      ),
+                    ),
+                  );
+                  _loadNotificationsSummary();
+                },
               ),
               IconButton(
                 icon: const Icon(Icons.logout),

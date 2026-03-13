@@ -66,6 +66,7 @@ return new class extends Migration {
                 workEndTime VARCHAR(8) DEFAULT '18:00:00',
                 latePunchInGraceMinutes INT DEFAULT 45,
                 earlyPunchOutGraceMinutes INT DEFAULT 30,
+                fcmToken VARCHAR(255) NULL,
                 FOREIGN KEY (departmentId) REFERENCES departments(id) ON DELETE SET NULL,
                 FOREIGN KEY (roleId) REFERENCES roles(id) ON DELETE SET NULL
             )

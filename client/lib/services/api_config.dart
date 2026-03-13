@@ -43,5 +43,6 @@ class ApiConfig {
   static String get usersUrl => '$baseUrl/users';
   static String get accountsUrl => '$baseUrl/accounts';
   static String get locationsUrl => '$baseUrl/locations';
+  static String get notificationsUrl => '$baseUrl/notifications';
 }
 

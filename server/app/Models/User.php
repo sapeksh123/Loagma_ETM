@@ -21,6 +21,18 @@ class User extends Authenticatable
         'name',
         'email',
         'password',
+        // Application-specific columns from the custom users table
+        'employeeCode',
+        'contactNumber',
+        'alternativeNumber',
+        'roleId',
+        'roles',
+        'departmentId',
+        'otp',
+        'otpExpiry',
+        'lastLogin',
+        'isActive',
+        'notes',
     ];
 
     /**
