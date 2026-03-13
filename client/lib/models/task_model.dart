@@ -1,5 +1,25 @@
 import 'dart:convert';
 
+class DailyStatusEntry {
+  final String date; // 'YYYY-MM-DD'
+  final String status; // assigned/in_progress/...
+  final String? note;
+
+  DailyStatusEntry({
+    required this.date,
+    required this.status,
+    this.note,
+  });
+
+  factory DailyStatusEntry.fromJson(Map<String, dynamic> json) {
+    return DailyStatusEntry(
+      date: json['date']?.toString() ?? '',
+      status: json['status']?.toString() ?? 'assigned',
+      note: json['note']?.toString(),
+    );
+  }
+}
+
 /// A single subtask with status and optional need_help_note when status is need_help.
 class SubtaskItem {
   final String text;
@@ -24,7 +44,7 @@ class SubtaskItem {
   static String _parseStatus(dynamic s) {
     if (s == null) return 'assigned';
     final v = s.toString();
-    const valid = ['assigned', 'in_progress', 'completed', 'paused', 'need_help'];
+    const valid = ['assigned', 'in_progress', 'completed', 'paused', 'need_help', 'ignore'];
     if (valid.contains(v)) return v;
     return 'assigned';
   }
@@ -63,6 +83,8 @@ class Task {
   final String? needHelpNote;
   final String createdAt;
   final String updatedAt;
+  final List<DailyStatusEntry>? taskHistory;
+  final Map<int, List<DailyStatusEntry>>? subtaskHistory;
 
   Task({
     required this.id,
@@ -83,6 +105,8 @@ class Task {
     this.needHelpNote,
     required this.createdAt,
     required this.updatedAt,
+    this.taskHistory,
+    this.subtaskHistory,
   });
 
   factory Task.fromJson(Map<String, dynamic> json) {
@@ -101,6 +125,63 @@ class Task {
     }
 
     final items = parseSubtaskItems(json['subtasks']);
+
+    List<DailyStatusEntry>? parseTaskHistory(dynamic v) {
+      if (v is List) {
+        return v
+            .whereType<Map>()
+            .map((e) => DailyStatusEntry.fromJson(
+                  Map<String, dynamic>.from(e),
+                ))
+            .toList();
+      }
+      return null;
+    }
+
+    Map<int, List<DailyStatusEntry>>? parseSubtaskHistory(dynamic v) {
+      // Backend currently sends subtask_history as a JSON array of arrays,
+      // where the outer index is the subtask index. Older versions might send
+      // it as an object/map keyed by subtask index. Support both shapes.
+      if (v is List) {
+        final map = <int, List<DailyStatusEntry>>{};
+        for (var i = 0; i < v.length; i++) {
+          final value = v[i];
+          if (value is List) {
+            map[i] = value
+                .whereType<Map>()
+                .map(
+                  (e) => DailyStatusEntry.fromJson(
+                    Map<String, dynamic>.from(e),
+                  ),
+                )
+                .toList();
+          }
+        }
+        return map;
+      }
+
+      if (v is Map) {
+        final map = <int, List<DailyStatusEntry>>{};
+        v.forEach((key, value) {
+          final idx = int.tryParse(key.toString());
+          if (idx == null) return;
+          if (value is List) {
+            map[idx] = value
+                .whereType<Map>()
+                .map(
+                  (e) => DailyStatusEntry.fromJson(
+                    Map<String, dynamic>.from(e),
+                  ),
+                )
+                .toList();
+          }
+        });
+        return map;
+      }
+
+      return null;
+    }
+
     return Task(
       id: json['id'] ?? '',
       title: json['title'] ?? '',
@@ -120,6 +201,8 @@ class Task {
       needHelpNote: json['need_help_note'],
       createdAt: json['createdAt'] ?? '',
       updatedAt: json['updatedAt'] ?? '',
+      taskHistory: parseTaskHistory(json['task_history']),
+      subtaskHistory: parseSubtaskHistory(json['subtask_history']),
     );
   }
 

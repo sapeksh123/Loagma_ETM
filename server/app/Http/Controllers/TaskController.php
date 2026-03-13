@@ -7,10 +7,11 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Carbon\Carbon;
 
 class TaskController extends Controller
 {
-    /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response */
+    /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response, plus attach daily history for daily tasks. */
     private static function decodeTask($task)
     {
         if (!$task) return $task;
@@ -18,6 +19,91 @@ class TaskController extends Controller
         if (isset($arr['subtasks'])) {
             $raw = is_string($arr['subtasks']) ? json_decode($arr['subtasks'], true) : $arr['subtasks'];
             $arr['subtasks'] = self::normalizeSubtasksForResponse($raw ?? []);
+        }
+
+        // Attach 7-day history for daily tasks
+        if (
+            ($arr['category'] ?? null) === 'daily' &&
+            isset($arr['id']) &&
+            Schema::hasTable('task_daily_statuses') &&
+            Schema::hasTable('subtask_daily_statuses')
+        ) {
+            $taskId = $arr['id'];
+            $today = Carbon::today();
+            $dates = [];
+            for ($i = 6; $i >= 0; $i--) {
+                $dates[] = $today->copy()->subDays($i)->toDateString();
+            }
+
+            // Task-level history (normalize date to Y-m-d so keys match $dates regardless of DB driver format)
+            $rows = DB::table('task_daily_statuses')
+                ->where('task_id', $taskId)
+                ->whereBetween('date', [$dates[0], end($dates)])
+                ->get();
+            $byDate = [];
+            foreach ($rows as $row) {
+                $dateKey = Carbon::parse($row->date)->toDateString();
+                $byDate[$dateKey] = [
+                    'date' => $dateKey,
+                    'status' => $row->status,
+                    'note' => $row->note,
+                ];
+            }
+            $taskHistory = [];
+            foreach ($dates as $d) {
+                if (isset($byDate[$d])) {
+                    $taskHistory[] = $byDate[$d];
+                } else {
+                    $taskHistory[] = [
+                        'date' => $d,
+                        'status' => 'assigned',
+                        'note' => null,
+                    ];
+                }
+            }
+            $arr['task_history'] = $taskHistory;
+
+            // Subtask-level history
+            $subtaskHistory = [];
+            $subtaskRows = DB::table('subtask_daily_statuses')
+                ->where('task_id', $taskId)
+                ->whereBetween('date', [$dates[0], end($dates)])
+                ->get();
+            foreach ($subtaskRows as $row) {
+                $idx = (int) $row->subtask_index;
+                $dateKey = Carbon::parse($row->date)->toDateString();
+                if (!isset($subtaskHistory[$idx])) {
+                    $subtaskHistory[$idx] = [];
+                }
+                $subtaskHistory[$idx][$dateKey] = [
+                    'date' => $dateKey,
+                    'status' => $row->status,
+                    'note' => $row->note,
+                ];
+            }
+
+            // Always emit a 7-day history list for every subtask index
+            $subtaskCount = isset($arr['subtasks']) && is_array($arr['subtasks'])
+                ? count($arr['subtasks'])
+                : 0;
+            $finalSubtaskHistory = [];
+            for ($idx = 0; $idx < $subtaskCount; $idx++) {
+                $byDateMap = $subtaskHistory[$idx] ?? [];
+                $entries = [];
+                foreach ($dates as $d) {
+                    if (isset($byDateMap[$d])) {
+                        $entries[] = $byDateMap[$d];
+                    } else {
+                        $entries[] = [
+                            'date' => $d,
+                            'status' => 'assigned',
+                            'note' => null,
+                        ];
+                    }
+                }
+                $finalSubtaskHistory[$idx] = $entries;
+            }
+            $arr['subtask_history'] = $finalSubtaskHistory;
         }
         return $arr;
     }
@@ -29,7 +115,7 @@ class TaskController extends Controller
         $out = [];
         foreach ($raw as $item) {
             if (is_array($item) && isset($item['text'])) {
-                $validStatus = ['assigned', 'in_progress', 'completed', 'paused', 'need_help'];
+                $validStatus = ['assigned', 'in_progress', 'completed', 'paused', 'need_help', 'ignore'];
                 $status = $item['status'] ?? 'assigned';
                 $row = [
                     'text' => (string) $item['text'],
@@ -59,7 +145,7 @@ class TaskController extends Controller
         $out = [];
         foreach ($input as $item) {
             if (is_array($item) && isset($item['text'])) {
-                $validStatus = ['assigned', 'in_progress', 'completed', 'paused', 'need_help'];
+                $validStatus = ['assigned', 'in_progress', 'completed', 'paused', 'need_help', 'ignore'];
                 $status = $item['status'] ?? 'assigned';
                 if (!in_array($status, $validStatus)) {
                     $status = 'assigned';
@@ -315,13 +401,14 @@ class TaskController extends Controller
                 'subtasks' => 'nullable|array',
                 'category' => 'sometimes|in:daily,project,personal,monthly,quarterly,yearly,other',
                 'priority' => 'sometimes|in:low,medium,high,critical',
-                'status' => 'sometimes|in:assigned,in_progress,completed,paused,need_help',
+                'status' => 'sometimes|in:assigned,in_progress,completed,paused,need_help,ignore',
                 'deadline_date' => 'nullable|date',
                 'deadline_time' => 'nullable',
                 'assigned_to' => 'sometimes|string',
             ]);
 
             $update = $validated;
+            $isDaily = $task->category === 'daily';
             if (array_key_exists('subtasks', $update)) {
                 if (!Schema::hasColumn('tasks', 'subtasks')) {
                     DB::statement('ALTER TABLE tasks ADD COLUMN subtasks JSON NULL AFTER description');
@@ -329,6 +416,29 @@ class TaskController extends Controller
                 $subtasksRaw = self::getSubtasksFromRequest($request);
                 $normalized = self::normalizeSubtasksForStorage($subtasksRaw);
                 $update['subtasks'] = $normalized !== null && count($normalized) > 0 ? json_encode($normalized) : null;
+
+                // For daily tasks, also upsert per-day subtask statuses for today
+                if ($isDaily && $normalized !== null) {
+                    $today = Carbon::today()->toDateString();
+                    $now = Carbon::now();
+                    foreach (array_values($normalized) as $index => $row) {
+                        $status = $row['status'] ?? 'assigned';
+                        $note = $row['need_help_note'] ?? null;
+                        DB::table('subtask_daily_statuses')->updateOrInsert(
+                            [
+                                'task_id' => $task->id,
+                                'subtask_index' => $index,
+                                'date' => $today,
+                            ],
+                            [
+                                'status' => $status,
+                                'note' => $note,
+                                'created_at' => $now,
+                                'updated_at' => $now,
+                            ]
+                        );
+                    }
+                }
             }
             DB::table('tasks')->where('id', $id)->update($update);
 
@@ -379,7 +489,7 @@ class TaskController extends Controller
     {
         try {
             $validated = $request->validate([
-                'status' => 'required|in:assigned,in_progress,completed,paused,need_help',
+                'status' => 'required|in:assigned,in_progress,completed,paused,need_help,ignore',
                 'need_help_note' => 'nullable|string|max:2000',
             ]);
 
@@ -393,17 +503,33 @@ class TaskController extends Controller
             }
 
             $update = ['status' => $validated['status']];
+            $note = array_key_exists('need_help_note', $validated)
+                ? ($validated['need_help_note'] ? trim($validated['need_help_note']) : null)
+                : null;
 
-            if ($validated['status'] === 'need_help' && array_key_exists('need_help_note', $validated)) {
-                $update['need_help_note'] = $validated['need_help_note']
-                    ? trim($validated['need_help_note'])
-                    : null;
-            } else {
-                // Clear note when leaving need_help status
-                $update['need_help_note'] = null;
+            if (array_key_exists('need_help_note', $validated)) {
+                $update['need_help_note'] = $note;
             }
 
             DB::table('tasks')->where('id', $id)->update($update);
+
+            // For daily tasks, also write into task_daily_statuses for today
+            if ($task->category === 'daily') {
+                $today = Carbon::today()->toDateString();
+                $now = Carbon::now();
+                DB::table('task_daily_statuses')->updateOrInsert(
+                    [
+                        'task_id' => $task->id,
+                        'date' => $today,
+                    ],
+                    [
+                        'status' => $validated['status'],
+                        'note' => $note,
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ]
+                );
+            }
 
             $updatedTask = DB::table('tasks')->where('id', $id)->first();
 

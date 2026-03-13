@@ -91,9 +91,7 @@ class TaskService {
   }) async {
     try {
       final payload = <String, dynamic>{'status': status};
-      if (status == 'need_help' &&
-          needHelpNote != null &&
-          needHelpNote.trim().isNotEmpty) {
+      if (needHelpNote != null && needHelpNote.trim().isNotEmpty) {
         payload['need_help_note'] = needHelpNote.trim();
       }
       final response = await http.patch(

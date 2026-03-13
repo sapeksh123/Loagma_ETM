@@ -587,13 +587,20 @@ class _TasksScreenState extends State<TasksScreen> {
         return Colors.amber;
       case 'need_help':
         return Colors.red;
+      case 'ignore':
+        return Colors.brown;
       default:
         return Colors.grey;
     }
   }
 
   static const _taskStatuses = [
-    'assigned', 'in_progress', 'completed', 'paused', 'need_help',
+    'assigned',
+    'in_progress',
+    'completed',
+    'paused',
+    'need_help',
+    'ignore',
   ];
 
   Color _getSubtaskStatusColor(String status) => _getStatusColor(status);
@@ -602,16 +609,22 @@ class _TasksScreenState extends State<TasksScreen> {
     return task.assignedTo == widget.userId;
   }
 
-  Future<void> _updateSubtaskStatus(Task task, int index, String newStatus) async {
+  Future<void> _updateSubtaskStatus(
+    Task task,
+    int index,
+    String newStatus, {
+    String? statusNote,
+  }) async {
     final list = task.subtasksWithStatus;
     if (index < 0 || index >= list.length) return;
     final updated = list.asMap().entries.map((e) {
       final st = e.value;
-      final map = <String, dynamic>{
-        'text': st.text,
-        'status': e.key == index ? newStatus : st.status,
-      };
-      if (st.needHelpNote != null && st.needHelpNote!.isNotEmpty) {
+      final isTarget = e.key == index;
+      final status = isTarget ? newStatus : st.status;
+      final map = <String, dynamic>{'text': st.text, 'status': status};
+      if (isTarget && statusNote != null && statusNote.isNotEmpty) {
+        map['need_help_note'] = statusNote;
+      } else if (st.needHelpNote != null && st.needHelpNote!.isNotEmpty) {
         map['need_help_note'] = st.needHelpNote;
       }
       return map;
@@ -631,7 +644,7 @@ class _TasksScreenState extends State<TasksScreen> {
   Future<void> _showSubtaskStatusPicker({
     required BuildContext context,
     required String currentStatus,
-    required void Function(String) onSelected,
+    required Future<void> Function(String) onSelected,
   }) async {
     await showModalBottomSheet(
       context: context,
@@ -666,9 +679,9 @@ class _TasksScreenState extends State<TasksScreen> {
                         ),
                       ),
                       selected: selected,
-                      onSelected: (_) {
-                        onSelected(s);
+                      onSelected: (_) async {
                         Navigator.pop(ctx);
+                        await onSelected(s);
                       },
                       selectedColor: color.withValues(alpha: 0.2),
                       backgroundColor: Colors.grey.shade100,
@@ -695,9 +708,92 @@ class _TasksScreenState extends State<TasksScreen> {
         return Colors.amber.shade50;
       case 'need_help':
         return Colors.red.shade50;
+      case 'ignore':
+        return Colors.brown.shade50;
       default:
         return Colors.grey.shade50;
     }
+  }
+
+  Future<String?> _showNeedHelpNoteDialog({
+    String title = 'Status Note',
+    String hint = 'Add a note for this status (optional)',
+    bool allowEmpty = true,
+  }) async {
+    final controller = TextEditingController();
+    final scaffoldContext = context;
+    final result = await showDialog<String>(
+      context: scaffoldContext,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.sticky_note_2_outlined,
+                  color: Colors.brown, size: 26),
+              const SizedBox(width: 10),
+              Text(title),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hint,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  maxLines: 4,
+                  autofocus: true,
+                  decoration: InputDecoration(
+                    hintText: 'Type note here...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final note = controller.text.trim();
+                if (!allowEmpty && note.isEmpty) {
+                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                    const SnackBar(
+                      content: Text('Please enter a note'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, note);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    // Let Flutter dispose the controller with the dialog's widget tree.
+    // Manually disposing here can cause lifecycle assertions if the
+    // TextField is still mounted when this future completes.
+    return result;
   }
 
   Color _getPriorityColor(String priority) {
@@ -734,6 +830,244 @@ class _TasksScreenState extends State<TasksScreen> {
       default:
         return Icons.task;
     }
+  }
+
+  Widget _buildTaskHistoryStrip(Task task) {
+    // Use task history when available; for daily tasks fall back to a synthetic
+    // 7-day window so the strip is always visible.
+    List<DailyStatusEntry>? history = task.taskHistory;
+    if ((history == null || history.isEmpty) && task.category == 'daily') {
+      history = _buildDefaultDailyHistory();
+    }
+    if (history == null || history.isEmpty) return const SizedBox.shrink();
+
+    final nonNullHistory = history;
+    return SizedBox(
+      height: 30,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: nonNullHistory.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (context, index) {
+          final entry = nonNullHistory[index];
+          final color = _getStatusColor(entry.status);
+          final date = entry.date.length >= 10 ? entry.date.substring(8, 10) : '';
+          final month = entry.date.length >= 7 ? entry.date.substring(5, 7) : '';
+          final label = '$date-$month';
+          final hasNote = entry.note != null && entry.note!.isNotEmpty;
+
+          return GestureDetector(
+            onTap: () {
+              _showHistoryEntryDialog(
+                context: context,
+                title: 'Task history',
+                dateLabel: label,
+                status: entry.status,
+                note: entry.note,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                // Always tint by status color so the strip clearly reflects
+                // the status (e.g. green for completed) regardless of note.
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: color,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                  if (hasNote) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.sticky_note_2_outlined,
+                      size: 12,
+                      color: color,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSubtaskHistoryStrip(Task task, int subtaskIndex) {
+    // First try to read history coming from backend; for daily tasks without
+    // history for this index, fall back to a synthetic 7-day window so the
+    // strip is always visible.
+    final map = task.subtaskHistory;
+    List<DailyStatusEntry>? history =
+        (map != null && map.containsKey(subtaskIndex))
+            ? map[subtaskIndex]
+            : null;
+    if ((history == null || history.isEmpty) && task.category == 'daily') {
+      history = _buildDefaultDailyHistory();
+    }
+    if (history == null || history.isEmpty) return const SizedBox.shrink();
+
+    final nonNullHistory = history;
+    return SizedBox(
+      height: 26,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: nonNullHistory.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 4),
+        itemBuilder: (context, index) {
+          final entry = nonNullHistory[index];
+          final color = _getStatusColor(entry.status);
+          final date = entry.date.length >= 10 ? entry.date.substring(8, 10) : '';
+          final month = entry.date.length >= 7 ? entry.date.substring(5, 7) : '';
+          final label = '$date-$month';
+          final hasNote = entry.note != null && entry.note!.isNotEmpty;
+
+          return GestureDetector(
+            onTap: () {
+              _showHistoryEntryDialog(
+                context: context,
+                title: 'Subtask history',
+                dateLabel: label,
+                status: entry.status,
+                note: entry.note,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                // Always tint by status color so the strip clearly reflects
+                // the status (e.g. green for completed) regardless of note.
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: color,
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                  if (hasNote) ...[
+                    const SizedBox(width: 3),
+                    Icon(
+                      Icons.circle,
+                      size: 8,
+                      color: color,
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showHistoryEntryDialog({
+    required BuildContext context,
+    required String title,
+    required String dateLabel,
+    required String status,
+    String? note,
+  }) {
+    final color = _getStatusColor(status);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.history, color: color, size: 22),
+              const SizedBox(width: 8),
+              Text(title),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade700),
+                  const SizedBox(width: 4),
+                  Text(
+                    dateLabel,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.circle, size: 10, color: color),
+                  const SizedBox(width: 6),
+                  Text(
+                    status.replaceAll('_', ' ').toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+              if (note != null && note.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Status note',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: color,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  note,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -815,6 +1149,28 @@ class _TasksScreenState extends State<TasksScreen> {
         label: const Text('New Task'),
       ),
     );
+  }
+
+  /// Build a default 7-day history window (today and previous 6 days)
+  /// with status `assigned` and no note, used when the backend has not yet
+  /// recorded any daily history for a task or subtask.
+  List<DailyStatusEntry> _buildDefaultDailyHistory() {
+    final now = DateTime.now();
+    final days = <DailyStatusEntry>[];
+    for (int i = 6; i >= 0; i--) {
+      final date = now.subtract(Duration(days: i));
+      final yyyy = date.year.toString().padLeft(4, '0');
+      final mm = date.month.toString().padLeft(2, '0');
+      final dd = date.day.toString().padLeft(2, '0');
+      days.add(
+        DailyStatusEntry(
+          date: '$yyyy-$mm-$dd',
+          status: 'assigned',
+          note: null,
+        ),
+      );
+    }
+    return days;
   }
 
   Widget _buildFilterChips() {
@@ -1235,6 +1591,62 @@ class _TasksScreenState extends State<TasksScreen> {
                     ],
                   ],
                 ),
+                if (task.needHelpNote != null &&
+                    task.needHelpNote!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.sticky_note_2_outlined,
+                          size: 16,
+                          color: Colors.red.shade700,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Status note',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Colors.red.shade800,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                task.needHelpNote!,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade800,
+                                ),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                if (task.category == 'daily') ...[
+                  const SizedBox(height: 8),
+                  _buildTaskHistoryStrip(task),
+                ],
                 if (task.descriptionOnly != null &&
                     task.descriptionOnly!.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -1270,8 +1682,7 @@ class _TasksScreenState extends State<TasksScreen> {
                       final idx = entry.key;
                       final st = entry.value;
                       final color = _getSubtaskStatusColor(st.status);
-                      final showSubtaskHelp = st.status == 'need_help' &&
-                          st.needHelpNote != null &&
+                      final showSubtaskHelp = st.needHelpNote != null &&
                           st.needHelpNote!.isNotEmpty;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
@@ -1304,9 +1715,21 @@ class _TasksScreenState extends State<TasksScreen> {
                                         ? () => _showSubtaskStatusPicker(
                                               context: context,
                                               currentStatus: st.status,
-                                              onSelected: (s) =>
-                                                  _updateSubtaskStatus(
-                                                      task, idx, s),
+                                              onSelected: (s) async {
+                                                final note =
+                                                    await _showNeedHelpNoteDialog(
+                                                  title: 'Status Note',
+                                                  hint:
+                                                      'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
+                                                  allowEmpty: true,
+                                                );
+                                                await _updateSubtaskStatus(
+                                                  task,
+                                                  idx,
+                                                  s,
+                                                  statusNote: note,
+                                                );
+                                              },
                                             )
                                         : null,
                                     borderRadius: BorderRadius.circular(20),
@@ -1339,10 +1762,10 @@ class _TasksScreenState extends State<TasksScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 10, vertical: 8),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.shade50,
+                                    color: color.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
-                                        color: Colors.red.shade300, width: 1.5),
+                                        color: color, width: 1.5),
                                   ),
                                   child: Column(
                                     crossAxisAlignment:
@@ -1350,16 +1773,18 @@ class _TasksScreenState extends State<TasksScreen> {
                                     children: [
                                       Row(
                                         children: [
-                                          Icon(Icons.help_outline,
-                                              size: 16,
-                                              color: Colors.red.shade700),
+                                          Icon(
+                                            Icons.sticky_note_2_outlined,
+                                            size: 16,
+                                            color: color,
+                                          ),
                                           const SizedBox(width: 6),
                                           Text(
-                                            'Need help',
+                                            'Status note',
                                             style: TextStyle(
                                               fontSize: 12,
                                               fontWeight: FontWeight.w600,
-                                              color: Colors.red.shade800,
+                                              color: color,
                                             ),
                                           ),
                                         ],
@@ -1369,7 +1794,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                         st.needHelpNote!,
                                         style: TextStyle(
                                           fontSize: 13,
-                                          color: Colors.grey.shade800,
+                                          color: color,
                                           height: 1.3,
                                         ),
                                         maxLines: 5,
@@ -1379,6 +1804,10 @@ class _TasksScreenState extends State<TasksScreen> {
                                   ),
                                 ),
                               ),
+                            ],
+                            if (task.category == 'daily') ...[
+                              const SizedBox(height: 4),
+                              _buildSubtaskHistoryStrip(task, idx),
                             ],
                           ],
                         ),
@@ -1628,8 +2057,26 @@ class _TasksScreenState extends State<TasksScreen> {
                             ),
                           ),
                           selected: selected,
-                          onSelected: (_) =>
-                              setModalState(() => taskStatus = s),
+                          onSelected: (_) async {
+                            final note = await _showNeedHelpNoteDialog(
+                              title: 'Status Note',
+                              hint:
+                                  'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
+                              allowEmpty: true,
+                            );
+                            setModalState(() {
+                              taskStatus = s;
+                            });
+                            if (note != null && note.isNotEmpty) {
+                              await TaskService.updateTaskStatus(
+                                task.id,
+                                s,
+                                needHelpNote: note,
+                              );
+                            } else {
+                              await TaskService.updateTaskStatus(task.id, s);
+                            }
+                          },
                           selectedColor: color.withValues(alpha: 0.2),
                           backgroundColor: Colors.grey.shade100,
                         );
@@ -1967,9 +2414,9 @@ class _TasksScreenState extends State<TasksScreen> {
                       final idx = entry.key;
                       final st = entry.value;
                       final color = _getSubtaskStatusColor(st.status);
-                      final showSubtaskHelp = st.status == 'need_help' &&
+                      final showSubtaskHelp =
                           st.needHelpNote != null &&
-                          st.needHelpNote!.isNotEmpty;
+                              st.needHelpNote!.isNotEmpty;
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 8),
                         child: Column(
@@ -1999,9 +2446,21 @@ class _TasksScreenState extends State<TasksScreen> {
                                         ? () => _showSubtaskStatusPicker(
                                               context: ctx,
                                               currentStatus: st.status,
-                                              onSelected: (s) =>
-                                                  _updateSubtaskStatus(
-                                                      task, idx, s),
+                                              onSelected: (s) async {
+                                                final note =
+                                                    await _showNeedHelpNoteDialog(
+                                                  title: 'Status Note',
+                                                  hint:
+                                                      'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
+                                                  allowEmpty: true,
+                                                );
+                                                await _updateSubtaskStatus(
+                                                  task,
+                                                  idx,
+                                                  s,
+                                                  statusNote: note,
+                                                );
+                                              },
                                             )
                                         : null,
                                     borderRadius: BorderRadius.circular(20),
@@ -2033,26 +2492,42 @@ class _TasksScreenState extends State<TasksScreen> {
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 8, vertical: 6),
                                   decoration: BoxDecoration(
-                                    color: Colors.red.shade50,
+                                    color: color.withValues(alpha: 0.08),
                                     borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                        color: Colors.red.shade200),
+                                    border: Border.all(color: color),
                                   ),
                                   child: Row(
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Icon(Icons.help_outline,
-                                          size: 14,
-                                          color: Colors.red.shade700),
+                                      Icon(
+                                        Icons.sticky_note_2_outlined,
+                                        size: 14,
+                                        color: color,
+                                      ),
                                       const SizedBox(width: 6),
                                       Expanded(
-                                        child: Text(
-                                          st.needHelpNote!,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey.shade800,
-                                          ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              'Status note',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: color,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            Text(
+                                              st.needHelpNote!,
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: color,
+                                              ),
+                                            ),
+                                          ],
                                         ),
                                       ),
                                     ],
@@ -2134,6 +2609,50 @@ class _TasksScreenState extends State<TasksScreen> {
                       ),
                   ],
                 ),
+                if (task.needHelpNote != null &&
+                    task.needHelpNote!.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: statusColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.sticky_note_2_outlined,
+                              size: 16,
+                              color: statusColor,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              'Status note',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: statusColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          task.needHelpNote!,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: statusColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
                 if (canEdit) ...[
                   const SizedBox(height: 16),
                   Row(

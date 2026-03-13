@@ -14,7 +14,7 @@ class ApiConfig {
   /// 1. Wait 30-60 seconds and retry
   /// 2. Set useProduction = false to use local backend
   /// 3. Make sure your local backend is running on port 5000
-  static const bool useProduction = true ;// Using production backend on Render
+  static const bool useProduction = false;// Using production backend on Render
 
   static String get baseUrl {
     if (useProduction) {
@@ -28,10 +28,10 @@ class ApiConfig {
         if (Platform.isAndroid) {
           return 'http://10.0.2.2:8000/api'; // Android Emulator
         } else {
-          return 'http://192.168.1.9:8000/api'; // Physical Device / iOS
+          return 'http://192.168.1.11:8000/api'; // Physical Device / iOS
         }
       } catch (_) {
-        return 'http://192.168.1.9:8000/api';
+        return 'http://192.168.1.11:8000/api';
       }
     }
   }
@@ -44,3 +44,4 @@ class ApiConfig {
   static String get accountsUrl => '$baseUrl/accounts';
   static String get locationsUrl => '$baseUrl/locations';
 }
+
