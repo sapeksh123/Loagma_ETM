@@ -51,9 +51,14 @@ Route::put('/tasks/{id}', [TaskController::class, 'update']);
 Route::delete('/tasks/{id}', [TaskController::class, 'destroy']);
 Route::patch('/tasks/{id}/status', [TaskController::class, 'updateStatus']);
 
-// Notes Routes
+// Notes Routes (list + CRUD; /me routes kept for backward compatibility)
+Route::get('/notes', [NoteController::class, 'index']);
+Route::post('/notes', [NoteController::class, 'store']);
 Route::get('/notes/me', [NoteController::class, 'showMe']);
 Route::put('/notes/me', [NoteController::class, 'upsertMe']);
+Route::get('/notes/{id}', [NoteController::class, 'show']);
+Route::put('/notes/{id}', [NoteController::class, 'update']);
+Route::delete('/notes/{id}', [NoteController::class, 'destroy']);
 
 // Attendance Routes
 Route::get('/attendance/today', [AttendanceController::class, 'today']);

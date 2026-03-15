@@ -8,7 +8,7 @@ import 'employees_screen.dart';
 import 'tasks_screen.dart';
 import 'attendance_screen.dart';
 import 'admin_chat_list_screen.dart';
-import 'notepad_screen.dart';
+import 'notepad_list_screen.dart';
 
 class AdminDashboard extends StatefulWidget {
   final String? userId;
@@ -485,7 +485,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
   }
 
   Widget _buildNotepadScreen() {
-    return NotepadScreen(
+    return NotepadListScreen(
       userId: widget.userId ?? '',
       userRole: widget.userRole,
       userName: widget.userName,

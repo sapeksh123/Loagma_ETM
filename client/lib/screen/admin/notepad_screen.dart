@@ -3,18 +3,26 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../models/note_model.dart';
 import '../../services/note_service.dart';
 
 class NotepadScreen extends StatefulWidget {
   final String userId;
   final String userRole;
   final String? userName;
+  /// When set, this screen acts as note-detail (load/save by id).
+  /// When null, legacy single notepad (getMyNote/saveMyNote).
+  final String? noteId;
+  /// Optional initial note when opening as detail (avoids extra load).
+  final Note? initialNote;
 
   const NotepadScreen({
     super.key,
     required this.userId,
     required this.userRole,
     this.userName,
+    this.noteId,
+    this.initialNote,
   });
 
   @override
@@ -30,8 +38,11 @@ class _NotepadScreenState extends State<NotepadScreen> {
   bool _isLoading = true;
   bool _isSaved = true;
   DateTime? _lastSavedAt;
+  String? _noteTitle; // for detail mode app bar
 
   String get _storageKey => 'notepad:${widget.userRole}:${widget.userId}';
+
+  bool get _isDetailMode => widget.noteId != null && widget.noteId!.isNotEmpty;
 
   @override
   void initState() {
@@ -59,10 +70,44 @@ class _NotepadScreenState extends State<NotepadScreen> {
   }
 
   Future<void> _load() async {
+    if (_isDetailMode) {
+      await _loadDetailNote();
+    } else {
+      await _loadLegacyNote();
+    }
+  }
+
+  Future<void> _loadDetailNote() async {
+    setState(() => _isLoading = true);
+    if (widget.initialNote != null) {
+      _controller.text = widget.initialNote!.content;
+      _noteTitle = widget.initialNote!.title;
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+      if (mounted) setState(() => _isLoading = false);
+    }
+
+    try {
+      final note = await NoteService.getNote(widget.userId, widget.noteId!);
+      if (!mounted) return;
+      _controller.text = note.content;
+      _noteTitle = note.title;
+      _controller.selection =
+          TextSelection.collapsed(offset: _controller.text.length);
+      setState(() {
+        _isLoading = false;
+        _isSaved = true;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadLegacyNote() async {
     setState(() => _isLoading = true);
     final prefs = await SharedPreferences.getInstance();
 
-    // Step 1: fast local load for instant UI
     final localText = prefs.getString(_storageKey) ?? '';
     _controller.text = localText;
     _controller.selection =
@@ -73,7 +118,6 @@ class _NotepadScreenState extends State<NotepadScreen> {
       _isSaved = true;
     });
 
-    // Step 2: sync with backend (if available)
     try {
       final remote = await NoteService.getMyNote(widget.userId);
       if (!mounted) return;
@@ -82,21 +126,35 @@ class _NotepadScreenState extends State<NotepadScreen> {
         _controller.selection =
             TextSelection.collapsed(offset: _controller.text.length);
         await prefs.setString(_storageKey, remote);
-        setState(() {
-          _isSaved = true;
-        });
+        setState(() => _isSaved = true);
       }
-    } catch (_) {
-      // Ignore sync errors here; local copy is still available.
-    }
+    } catch (_) {}
   }
 
   Future<void> _save() async {
+    if (_isDetailMode) {
+      try {
+        await NoteService.updateNote(
+          widget.userId,
+          widget.noteId!,
+          content: _controller.text,
+        );
+        if (!mounted) return;
+        setState(() {
+          _isSaved = true;
+          _lastSavedAt = DateTime.now();
+        });
+      } catch (_) {
+        if (!mounted) return;
+        setState(() => _isSaved = false);
+      }
+      return;
+    }
+
     final prefs = await SharedPreferences.getInstance();
     final text = _controller.text;
     await prefs.setString(_storageKey, text);
 
-    // Also sync to backend; if it fails we still have local cache.
     try {
       await NoteService.saveMyNote(widget.userId, text);
       if (!mounted) return;
@@ -106,40 +164,50 @@ class _NotepadScreenState extends State<NotepadScreen> {
       });
     } catch (_) {
       if (!mounted) return;
-      setState(() {
-        _isSaved = false;
-      });
+      setState(() => _isSaved = false);
     }
   }
 
-  Future<void> _clearNote() async {
+  Future<void> _deleteNote() async {
     final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: const Text('Clear note?'),
-            content: const Text('This will delete everything in your notepad.'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Clear'),
-              ),
-            ],
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Delete note?'),
+        content: const Text(
+          'This note will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
           ),
-        ) ??
-        false;
-
-    if (!ok) return;
-    _controller.clear();
-    await _save();
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    try {
+      await NoteService.deleteNote(widget.userId, widget.noteId!);
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
   }
 
   String _formatSavedText() {
@@ -151,29 +219,29 @@ class _NotepadScreenState extends State<NotepadScreen> {
     return 'Saved $hh:$mm';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final titleName = (widget.userName ?? '').trim();
-    final subtitle = titleName.isNotEmpty ? titleName : widget.userRole;
-
+  Widget _buildContent() {
     if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
+
+    final titleName = (widget.userName ?? '').trim();
+    final subtitle = titleName.isNotEmpty ? titleName : widget.userRole;
 
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade700,
+          if (!_isDetailMode)
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.grey.shade700,
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
+          if (!_isDetailMode) const SizedBox(height: 6),
           Container(
             width: double.infinity,
             padding:
@@ -250,5 +318,35 @@ class _NotepadScreenState extends State<NotepadScreen> {
       ),
     );
   }
-}
 
+  @override
+  Widget build(BuildContext context) {
+    if (_isDetailMode) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F7),
+        appBar: AppBar(
+          backgroundColor: _gold,
+          foregroundColor: Colors.white,
+          title: Text(
+            _noteTitle ?? 'Note',
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _deleteNote,
+              tooltip: 'Delete note',
+            ),
+          ],
+        ),
+        body: _buildContent(),
+      );
+    }
+
+    return _buildContent();
+  }
+}

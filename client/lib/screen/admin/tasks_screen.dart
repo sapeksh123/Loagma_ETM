@@ -42,6 +42,8 @@ class _TasksScreenState extends State<TasksScreen> {
   String? _selectedEmployeeName;
   String? _selectedEmployeePhone;
   bool _filtersExpanded = false;
+  final TextEditingController _employeeSearchController =
+      TextEditingController();
 
   // Preset reminder/update texts for the help dialog
   static const List<Map<String, String>> _presetMessages = [
@@ -69,6 +71,37 @@ class _TasksScreenState extends State<TasksScreen> {
       widget.userRole == 'admin' ||
       widget.userRole == 'subadmin' ||
       widget.userRole == 'techincharge';
+
+  List<Map<String, dynamic>> get _filteredEmployeesForList {
+    final q = _employeeSearchController.text.trim().toLowerCase();
+    if (q.isEmpty) return _employees;
+    return _employees.where((e) {
+      final name = (e['name'] as String? ?? '').toLowerCase();
+      final role = _employeeRoleLabel(e['role'] as String? ?? '').toLowerCase();
+      return name.contains(q) || role.contains(q);
+    }).toList();
+  }
+
+  static String _employeeRoleLabel(String role) {
+    switch (role) {
+      case 'admin':
+        return 'Admin';
+      case 'subadmin':
+        return 'Sub Admin';
+      case 'techincharge':
+        return 'Tech Incharge';
+      case 'employee':
+        return 'Employee';
+      default:
+        return role.isEmpty ? '—' : role;
+    }
+  }
+
+  @override
+  void dispose() {
+    _employeeSearchController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -139,13 +172,10 @@ class _TasksScreenState extends State<TasksScreen> {
           ),
           if (_viewMode == 'employee') ...[
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(child: _buildEmployeeSelector()),
-                const SizedBox(width: 8),
-                _buildEmployeeContactButtons(),
-              ],
-            ),
+            if (_selectedEmployeeId == null)
+              _buildEmployeeSearchBar()
+            else
+              _buildViewingEmployeeBar(),
           ],
         ],
       ),
@@ -153,8 +183,7 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   /// Header used when the view mode is locked from the dashboard cards.
-  /// For employee mode, we still want to show which employee's tasks
-  /// are being viewed, and allow changing the employee.
+  /// For employee mode, show search bar or "Viewing: Name" + Change.
   Widget _buildLockedAdminHeader() {
     if (_viewMode != 'employee') {
       return const SizedBox.shrink();
@@ -178,15 +207,95 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(child: _buildEmployeeSelector()),
-              const SizedBox(width: 8),
-              _buildEmployeeContactButtons(),
-            ],
-          ),
+          if (_selectedEmployeeId == null)
+            _buildEmployeeSearchBar()
+          else
+            _buildViewingEmployeeBar(),
         ],
       ),
+    );
+  }
+
+  Widget _buildEmployeeSearchBar() {
+    return TextField(
+      controller: _employeeSearchController,
+      onChanged: (_) => setState(() {}),
+      decoration: InputDecoration(
+        hintText: 'Search by name or role',
+        prefixIcon: const Icon(Icons.search, size: 22),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+      ),
+    );
+  }
+
+  Widget _buildViewingEmployeeBar() {
+    return Row(
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: const Color(0xFFceb56e).withValues(alpha: 0.2),
+                child: Text(
+                  (_selectedEmployeeName ?? '?').isNotEmpty
+                      ? (_selectedEmployeeName![0].toUpperCase())
+                      : '?',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFceb56e),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      'Viewing tasks for',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    Text(
+                      _selectedEmployeeName ?? '—',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        _buildEmployeeContactButtons(),
+        const SizedBox(width: 6),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _selectedEmployeeId = null;
+              _selectedEmployeeName = null;
+              _selectedEmployeePhone = null;
+            });
+            _fetchTasks();
+          },
+          child: const Text('Change'),
+        ),
+      ],
     );
   }
 
@@ -303,112 +412,116 @@ class _TasksScreenState extends State<TasksScreen> {
     );
   }
 
-  Widget _buildEmployeeSelector() {
+  /// Content when in Employee Tasks view with no employee selected: list of employees.
+  Widget _buildEmployeeListContent() {
     if (_isEmployeesLoading) {
-      return Row(
-        children: const [
-          SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
-          SizedBox(width: 8),
-          Text(
-            'Loading employees...',
-            style: TextStyle(fontSize: 12),
-          ),
-        ],
-      );
+      return const Center(child: CircularProgressIndicator());
     }
-
     if (_employees.isEmpty) {
-      return const Text(
-        'No employees found.',
-        style: TextStyle(fontSize: 12, color: Colors.redAccent),
+      return Center(
+        child: Text(
+          'No employees found.',
+          style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+        ),
       );
     }
-
-    final selectedText = _selectedEmployeeName ??
-        'Select employee (${_employees.length} available)';
-
-    return OutlinedButton.icon(
-      onPressed: () async {
-        final result = await showModalBottomSheet<Map<String, dynamic>>(
-          context: context,
-          shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    final filtered = _filteredEmployeesForList;
+    if (filtered.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'No employees match "${_employeeSearchController.text.trim()}"',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+            textAlign: TextAlign.center,
           ),
-          builder: (context) {
-            return SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(height: 12),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade400,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Choose Employee',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView.builder(
-                      itemCount: _employees.length,
-                      itemBuilder: (context, index) {
-                        final emp = _employees[index];
-                        final code = emp['employeeCode'] as String? ?? '';
-                        final name = emp['name'] as String? ?? 'Unknown';
-                        final subtitle =
-                            code.isNotEmpty ? 'Code: $code' : null;
-                        return ListTile(
-                          title: Text(name),
-                          subtitle:
-                              subtitle != null ? Text(subtitle) : null,
-                          onTap: () {
-                            Navigator.pop(context, emp);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-
-        if (result != null && mounted) {
-          setState(() {
-            _selectedEmployeeId = result['id'] as String?;
-            _selectedEmployeeName = result['name'] as String?;
-            _selectedEmployeePhone = result['phone'] as String?;
-          });
-          _fetchTasks();
-        }
-      },
-      icon: const Icon(Icons.people_alt_outlined, size: 18),
-      label: Text(
-        selectedText,
-        style: const TextStyle(fontSize: 13),
-      ),
-      style: OutlinedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        side: const BorderSide(color: Color(0xFFceb56e)),
-        foregroundColor: const Color(0xFFceb56e),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(30),
         ),
-      ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
+      itemCount: filtered.length,
+      itemBuilder: (context, index) {
+        final emp = filtered[index];
+        final name = emp['name'] as String? ?? 'Unknown';
+        final role = emp['role'] as String? ?? '';
+        final roleLabel = _employeeRoleLabel(role);
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: () {
+                setState(() {
+                  _selectedEmployeeId = emp['id'] as String?;
+                  _selectedEmployeeName = emp['name'] as String?;
+                  _selectedEmployeePhone = emp['phone'] as String?;
+                });
+                _fetchTasks();
+              },
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey.shade200),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 22,
+                      backgroundColor: const Color(0xFFceb56e).withValues(alpha: 0.2),
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFFceb56e),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            name,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.black87,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            roleLabel,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -1104,15 +1217,18 @@ class _TasksScreenState extends State<TasksScreen> {
               widget.lockViewMode
                   ? _buildLockedAdminHeader()
                   : _buildAdminModeSelector(),
-            _buildFilterChips(),
+            if (!(_isManagerRole && _viewMode == 'employee' && _selectedEmployeeId == null))
+              _buildFilterChips(),
             Expanded(
-              child: _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : _errorMessage != null
-                      ? _buildErrorView()
-                      : _filteredTasks.isEmpty
-                          ? _buildEmptyView()
-                          : _buildTaskList(),
+              child: _isManagerRole && _viewMode == 'employee' && _selectedEmployeeId == null
+                  ? _buildEmployeeListContent()
+                  : _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _errorMessage != null
+                          ? _buildErrorView()
+                          : _filteredTasks.isEmpty
+                              ? _buildEmptyView()
+                              : _buildTaskList(),
             ),
           ],
         ),
@@ -2927,5 +3043,219 @@ class _TasksScreenState extends State<TasksScreen> {
         ),
       );
     }
+  }
+}
+
+/// Bottom sheet for selecting an employee: search box + list showing name and role only.
+class _EmployeeSelectSheet extends StatefulWidget {
+  final List<Map<String, dynamic>> employees;
+  final void Function(Map<String, dynamic>) onSelect;
+
+  const _EmployeeSelectSheet({
+    required this.employees,
+    required this.onSelect,
+  });
+
+  @override
+  State<_EmployeeSelectSheet> createState() => _EmployeeSelectSheetState();
+}
+
+class _EmployeeSelectSheetState extends State<_EmployeeSelectSheet> {
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocus = FocusNode();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _searchFocus.dispose();
+    super.dispose();
+  }
+
+  static String _roleLabel(String role) {
+    switch (role) {
+      case 'admin':
+        return 'Admin';
+      case 'subadmin':
+        return 'Sub Admin';
+      case 'techincharge':
+        return 'Tech Incharge';
+      case 'employee':
+        return 'Employee';
+      default:
+        return role.isEmpty ? '—' : role;
+    }
+  }
+
+  List<Map<String, dynamic>> get _filtered {
+    final q = _searchController.text.trim().toLowerCase();
+    if (q.isEmpty) return widget.employees;
+    return widget.employees.where((e) {
+      final name = (e['name'] as String? ?? '').toLowerCase();
+      final role = _roleLabel(e['role'] as String? ?? '').toLowerCase();
+      return name.contains(q) || role.contains(q);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = _filtered;
+    return SafeArea(
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: Text(
+                  'Choose Employee',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: TextField(
+                  controller: _searchController,
+                  focusNode: _searchFocus,
+                  onChanged: (_) => setState(() {}),
+                  decoration: InputDecoration(
+                    hintText: 'Search by name or role',
+                    prefixIcon: const Icon(Icons.search, size: 22),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: filtered.isEmpty
+                    ? Center(
+                        child: Text(
+                          'No employees match "${_searchController.text.trim()}"',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: scrollController,
+                        itemCount: filtered.length,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        itemBuilder: (context, index) {
+                          final emp = filtered[index];
+                          final name = emp['name'] as String? ?? 'Unknown';
+                          final role = emp['role'] as String? ?? '';
+                          final roleLabel = _roleLabel(role);
+                          return Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: () => widget.onSelect(emp),
+                              borderRadius: BorderRadius.circular(12),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                                margin: const EdgeInsets.only(bottom: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: Colors.grey.shade200,
+                                    width: 1,
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withValues(alpha: 0.04),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 22,
+                                      backgroundColor: const Color(0xFFceb56e).withValues(alpha: 0.2),
+                                      child: Text(
+                                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                        style: const TextStyle(
+                                          fontSize: 18,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFFceb56e),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            name,
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            roleLabel,
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey.shade600,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.chevron_right,
+                                      color: Colors.grey.shade400,
+                                      size: 22,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 }
