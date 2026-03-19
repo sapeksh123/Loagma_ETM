@@ -24,32 +24,46 @@ class AdminChatThreadScreen extends StatefulWidget {
 
 class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
   final List<ChatMessage> _messages = [];
+  final ScrollController _scrollController = ScrollController();
   bool _isLoading = true;
+  bool _isRefreshing = false;
   String? _error;
+  String? _lastReadMessageId;
   final TextEditingController _inputController = TextEditingController();
   Timer? _pollTimer;
+  Timer? _typingDebounce;
+  bool _showDebugIds = false;
 
   @override
   void initState() {
     super.initState();
+    ChatService.setPresence(userId: widget.userId, userRole: widget.userRole, isOnline: true).catchError((_) {});
     _loadMessages(initial: true);
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _typingDebounce?.cancel();
+    ChatService.setTyping(threadId: widget.thread.id, userId: widget.userId, userRole: widget.userRole, isTyping: false).catchError((_) {});
+    ChatService.setPresence(userId: widget.userId, userRole: widget.userRole, isOnline: false).catchError((_) {});
+    _scrollController.dispose();
     _inputController.dispose();
     super.dispose();
   }
 
   void _startPolling() {
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 7), (_) {
+    _pollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (_isRefreshing) return;
       _loadMessages(initial: false);
     });
   }
 
   Future<void> _loadMessages({required bool initial}) async {
+    if (_isRefreshing && !initial) return;
+    _isRefreshing = true;
+
     setState(() {
       if (initial) {
         _isLoading = true;
@@ -61,6 +75,8 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
           initial || _messages.isEmpty ? null : _messages.last.id;
       final newMessages = await ChatService.getMessages(
         threadId: widget.thread.id,
+        userId: widget.userId,
+        userRole: widget.userRole,
         sinceMessageId: sinceId,
       );
       if (!mounted) return;
@@ -72,31 +88,88 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
       } else if (newMessages.isNotEmpty) {
         _messages.addAll(newMessages);
       }
+
+      if (newMessages.isNotEmpty) {
+        _scrollToBottom();
+      }
+
+      final incoming = newMessages.where((m) => m.senderId != widget.userId).toList();
+      if (incoming.isNotEmpty) {
+        final latestIncoming = incoming.last;
+        _fireAndForget(
+          ChatService.markMessageDelivered(
+            threadId: widget.thread.id,
+            messageId: latestIncoming.id,
+            userId: widget.userId,
+            userRole: widget.userRole,
+          ),
+        );
+      }
+
       if (_messages.isNotEmpty) {
         final last = _messages.last;
-        await ChatService.markThreadRead(
-          threadId: widget.thread.id,
-          userId: widget.userId,
-          lastReadMessageId: last.id,
-        );
+        if (_lastReadMessageId != last.id) {
+          _lastReadMessageId = last.id;
+          _fireAndForget(
+            ChatService.markThreadRead(
+              threadId: widget.thread.id,
+              userId: widget.userId,
+              userRole: widget.userRole,
+              lastReadMessageId: last.id,
+            ),
+          );
+          if (last.senderId != widget.userId) {
+            _fireAndForget(
+              ChatService.markMessageSeen(
+                threadId: widget.thread.id,
+                messageId: last.id,
+                userId: widget.userId,
+                userRole: widget.userRole,
+              ),
+            );
+          }
+        }
       }
       setState(() {});
       if (initial) {
         _startPolling();
       }
+      _isRefreshing = false;
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _error = e.toString().replaceFirst('Exception: ', '').trim();
         _isLoading = false;
       });
+      _isRefreshing = false;
     }
   }
 
   Future<void> _sendMessage() async {
     final text = _inputController.text.trim();
     if (text.isEmpty) return;
+    final localId = 'local-${DateTime.now().millisecondsSinceEpoch}';
+    final localMessage = ChatMessage(
+      id: localId,
+      threadId: widget.thread.id,
+      senderId: widget.userId,
+      senderRole: widget.userRole,
+      body: text,
+      createdAt: DateTime.now(),
+      sentAt: DateTime.now(),
+      deliveredAt: null,
+      seenAt: null,
+      reactions: const [],
+    );
+
     _inputController.clear();
+    setState(() {
+      _messages.add(localMessage);
+    });
+    _scrollToBottom();
+
+    ChatService.setTyping(threadId: widget.thread.id, userId: widget.userId, userRole: widget.userRole, isTyping: false).catchError((_) {});
+
     try {
       final msg = await ChatService.sendMessage(
         threadId: widget.thread.id,
@@ -105,16 +178,27 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
         body: text,
       );
       if (!mounted) return;
+      final index = _messages.indexWhere((m) => m.id == localId);
       setState(() {
-        _messages.add(msg);
+        if (index >= 0) {
+          _messages[index] = msg;
+        } else {
+          _messages.add(msg);
+        }
       });
-      await ChatService.markThreadRead(
+      _lastReadMessageId = msg.id;
+      _fireAndForget(ChatService.markThreadRead(
         threadId: widget.thread.id,
         userId: widget.userId,
+        userRole: widget.userRole,
         lastReadMessageId: msg.id,
-      );
+      ));
     } catch (e) {
       if (!mounted) return;
+      setState(() {
+        _messages.removeWhere((m) => m.id == localId);
+      });
+      _inputController.text = text;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -132,18 +216,48 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
         : 'Chat';
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+        titleSpacing: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const Text(
+              'Fast chat mode',
+              style: TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+          ],
         ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: _buildMessagesBody(),
+        actions: [
+          IconButton(
+            tooltip: _showDebugIds ? 'Hide debug IDs' : 'Show debug IDs',
+            icon: Icon(_showDebugIds ? Icons.bug_report : Icons.bug_report_outlined),
+            onPressed: () {
+              setState(() {
+                _showDebugIds = !_showDebugIds;
+              });
+            },
           ),
-          _buildInputBar(),
         ],
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [Color(0xFFF7F3E7), Color(0xFFFFFFFF)],
+          ),
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: _buildMessagesBody(),
+            ),
+            _buildInputBar(),
+          ],
+        ),
       ),
     );
   }
@@ -196,6 +310,7 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
     }
 
     return ListView.builder(
+      controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       reverse: false,
       itemCount: _messages.length,
@@ -205,45 +320,89 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
         return Align(
           alignment:
               isMe ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            margin: const EdgeInsets.symmetric(vertical: 2),
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 8,
-            ),
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.7,
-            ),
-            decoration: BoxDecoration(
-              color: isMe
-                  ? const Color(0xFFceb56e).withValues(alpha: 0.85)
-                  : Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  msg.body,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: isMe ? Colors.white : Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Align(
-                  alignment: Alignment.bottomRight,
-                  child: Text(
-                    _formatTime(msg.createdAt),
+          child: GestureDetector(
+            onLongPress: () => _showReactionPicker(msg),
+            child: Container(
+              margin: const EdgeInsets.symmetric(vertical: 2),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.7,
+              ),
+              decoration: BoxDecoration(
+                color: isMe
+                    ? const Color(0xFFceb56e).withValues(alpha: 0.85)
+                    : Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${_senderLabel(msg, isMe)} -> ${_receiverLabel(msg, isMe)}',
                     style: TextStyle(
-                      fontSize: 10,
-                      color: isMe
-                          ? Colors.white70
-                          : Colors.grey.shade600,
+                      fontSize: 11,
+                      color: isMe ? Colors.white70 : Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
-              ],
+                  const SizedBox(height: 4),
+                  Text(
+                    msg.body,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isMe ? Colors.white : Colors.black87,
+                    ),
+                  ),
+                  if (_showDebugIds) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'debug current=${widget.userId} sender=${msg.senderId} receiver=${msg.receiverId ?? '-'}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: isMe ? Colors.white70 : Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+                  if (msg.reactions.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 4,
+                      children: msg.reactions
+                          .map((reaction) => Text(reaction.emoji, style: const TextStyle(fontSize: 12)))
+                          .toList(),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _formatTime(msg.createdAt),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isMe ? Colors.white70 : Colors.grey.shade600,
+                          ),
+                        ),
+                        if (isMe) ...[
+                          const SizedBox(width: 4),
+                          Icon(
+                            _statusIcon(msg),
+                            size: 13,
+                            color: msg.seenAt != null
+                                ? Colors.lightBlueAccent
+                                : (isMe ? Colors.white70 : Colors.grey.shade600),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -273,6 +432,26 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
                 controller: _inputController,
                 minLines: 1,
                 maxLines: 4,
+                textInputAction: TextInputAction.send,
+                onSubmitted: (_) => _sendMessage(),
+                onChanged: (value) {
+                  final isTyping = value.trim().isNotEmpty;
+                  _typingDebounce?.cancel();
+                  ChatService.setTyping(
+                    threadId: widget.thread.id,
+                    userId: widget.userId,
+                    userRole: widget.userRole,
+                    isTyping: isTyping,
+                  ).catchError((_) {});
+                  _typingDebounce = Timer(const Duration(seconds: 2), () {
+                    ChatService.setTyping(
+                      threadId: widget.thread.id,
+                      userId: widget.userId,
+                      userRole: widget.userRole,
+                      isTyping: false,
+                    ).catchError((_) {});
+                  });
+                },
                 decoration: InputDecoration(
                   hintText: 'Type a message...',
                   border: OutlineInputBorder(
@@ -301,6 +480,124 @@ class _AdminChatThreadScreenState extends State<AdminChatThreadScreen> {
     final hh = dt.hour.toString().padLeft(2, '0');
     final mm = dt.minute.toString().padLeft(2, '0');
     return '$hh:$mm';
+  }
+
+  IconData _statusIcon(ChatMessage msg) {
+    if (msg.seenAt != null) return Icons.done_all;
+    if (msg.deliveredAt != null) return Icons.done_all;
+    return Icons.done;
+  }
+
+  Future<void> _showReactionPicker(ChatMessage message) async {
+    const emojis = ['👍', '❤️', '😂', '😮', '🙏'];
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: emojis
+                .map(
+                  (emoji) => ListTile(
+                    title: Text(emoji, style: const TextStyle(fontSize: 24)),
+                    onTap: () => Navigator.of(context).pop(emoji),
+                  ),
+                )
+                .toList(),
+          ),
+        );
+      },
+    );
+
+    if (selected == null) return;
+
+    try {
+      final updatedReactions = await ChatService.addReaction(
+        threadId: widget.thread.id,
+        messageId: message.id,
+        userId: widget.userId,
+        userRole: widget.userRole,
+        emoji: selected,
+      );
+
+      final index = _messages.indexWhere((m) => m.id == message.id);
+      if (index < 0) return;
+      final current = _messages[index];
+      setState(() {
+        _messages[index] = ChatMessage(
+          id: current.id,
+          threadId: current.threadId,
+          senderId: current.senderId,
+          senderRole: current.senderRole,
+          body: current.body,
+          taskId: current.taskId,
+          subtaskIndex: current.subtaskIndex,
+          createdAt: current.createdAt,
+          sentAt: current.sentAt,
+          deliveredAt: current.deliveredAt,
+          seenAt: current.seenAt,
+          isDeleted: current.isDeleted,
+          reactions: updatedReactions,
+        );
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '').trim())),
+      );
+    }
+  }
+
+  void _fireAndForget(Future<void> future) {
+    future.catchError((_) {});
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+      );
+    });
+  }
+
+  String _senderLabel(ChatMessage msg, bool isMe) {
+    if (isMe) return 'You';
+    if ((msg.senderName ?? '').trim().isNotEmpty) return msg.senderName!.trim();
+    return _roleLabel(msg.senderRole);
+  }
+
+  String _receiverLabel(ChatMessage msg, bool isMe) {
+    if (!isMe) return 'You';
+    if ((msg.receiverName ?? '').trim().isNotEmpty) return msg.receiverName!.trim();
+    return _peerLabelFromHistory();
+  }
+
+  String _peerLabelFromHistory() {
+    for (int i = _messages.length - 1; i >= 0; i--) {
+      final m = _messages[i];
+      if (m.senderId != widget.userId) {
+        if ((m.senderName ?? '').trim().isNotEmpty) return m.senderName!.trim();
+        return _roleLabel(m.senderRole);
+      }
+    }
+    return widget.thread.title.trim().isNotEmpty ? widget.thread.title.trim() : 'User';
+  }
+
+  String _roleLabel(String role) {
+    switch (role.toLowerCase()) {
+      case 'admin':
+        return 'Admin';
+      case 'subadmin':
+        return 'Subadmin';
+      case 'techincharge':
+        return 'Technical Incharge';
+      case 'employee':
+        return 'Employee';
+      default:
+        return role;
+    }
   }
 }
 

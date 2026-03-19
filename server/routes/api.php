@@ -77,9 +77,18 @@ Route::post('/notifications', [NotificationController::class, 'store']);
 Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRead']);
 
 // Chat Routes
-Route::get('/chat/threads', [ChatController::class, 'listThreads']);
-Route::post('/chat/threads/direct', [ChatController::class, 'openDirectThread']);
-Route::post('/chat/threads/broadcast', [ChatController::class, 'openBroadcastThread']);
-Route::get('/chat/threads/{id}/messages', [ChatController::class, 'listMessages']);
-Route::post('/chat/threads/{id}/messages', [ChatController::class, 'sendMessage']);
-Route::post('/chat/threads/{id}/read', [ChatController::class, 'markThreadRead']);
+Route::middleware('chat.actor')->group(function () {
+    Route::get('/chat/threads', [ChatController::class, 'listThreads']);
+    Route::post('/chat/threads/direct', [ChatController::class, 'openDirectThread']);
+    Route::post('/chat/threads/broadcast', [ChatController::class, 'openBroadcastThread']);
+    Route::get('/chat/threads/{id}/messages', [ChatController::class, 'listMessages']);
+    Route::post('/chat/threads/{id}/messages', [ChatController::class, 'sendMessage']);
+    Route::post('/chat/threads/{id}/read', [ChatController::class, 'markThreadRead']);
+    Route::post('/chat/threads/{id}/messages/{messageId}/delivered', [ChatController::class, 'markMessageDelivered']);
+    Route::post('/chat/threads/{id}/messages/{messageId}/seen', [ChatController::class, 'markMessageSeen']);
+    Route::get('/chat/threads/{id}/messages/{messageId}/reactions', [ChatController::class, 'listMessageReactions']);
+    Route::post('/chat/threads/{id}/messages/{messageId}/reactions', [ChatController::class, 'addMessageReaction']);
+    Route::delete('/chat/threads/{id}/messages/{messageId}/reactions', [ChatController::class, 'removeMessageReaction']);
+    Route::post('/chat/threads/{id}/typing', [ChatController::class, 'updateTypingStatus']);
+    Route::post('/chat/presence', [ChatController::class, 'upsertPresence']);
+});

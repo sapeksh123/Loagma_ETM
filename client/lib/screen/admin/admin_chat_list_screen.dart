@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/chat_thread_model.dart';
+import '../../models/chat_user_model.dart';
 import '../../services/chat_service.dart';
 import 'admin_chat_thread_screen.dart';
 
@@ -22,6 +23,7 @@ class _AdminChatListScreenState extends State<AdminChatListScreen> {
   bool _isLoading = true;
   String? _error;
   List<ChatThread> _threads = [];
+  List<ChatUser> _users = [];
 
   @override
   void initState() {
@@ -35,13 +37,21 @@ class _AdminChatListScreenState extends State<AdminChatListScreen> {
       _error = null;
     });
     try {
-      final data = await ChatService.getThreads(
-        userId: widget.userId,
-        role: widget.userRole,
-      );
+      final results = await Future.wait([
+        ChatService.getThreads(
+          userId: widget.userId,
+          role: widget.userRole,
+        ),
+        ChatService.getChatUsers(currentUserId: widget.userId),
+      ]);
+
+      final data = results[0] as List<ChatThread>;
+      final users = results[1] as List<ChatUser>;
+
       if (!mounted) return;
       setState(() {
         _threads = data;
+        _users = users;
         _isLoading = false;
       });
     } catch (e) {
@@ -92,7 +102,7 @@ class _AdminChatListScreenState extends State<AdminChatListScreen> {
         ),
       );
     }
-    if (_threads.isEmpty) {
+    if (_threads.isEmpty && _users.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -101,7 +111,7 @@ class _AdminChatListScreenState extends State<AdminChatListScreen> {
                 size: 60, color: Colors.grey.shade400),
             const SizedBox(height: 8),
             Text(
-              'No conversations yet',
+              'No users available for chat',
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -115,99 +125,168 @@ class _AdminChatListScreenState extends State<AdminChatListScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadThreads,
-      child: ListView.builder(
+      child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-        itemCount: _threads.length,
-        itemBuilder: (context, index) {
-          final t = _threads[index];
-          final isBroadcastAll = t.type == 'broadcast_all';
-          final isBroadcastRole = t.type == 'broadcast_role';
-          final isDirect = t.type == 'direct';
-
-          IconData icon;
-          Color color;
-          if (isDirect) {
-            icon = Icons.person_outline;
-            color = Colors.blue;
-          } else if (isBroadcastRole) {
-            icon = Icons.groups_outlined;
-            color = Colors.deepOrange;
-          } else {
-            icon = Icons.campaign_outlined;
-            color = Colors.green;
-          }
-
-          final subtitle = _buildSubtitle(t);
-
-          return Card(
-            margin: const EdgeInsets.only(bottom: 10),
-            elevation: 2,
-            shadowColor: Colors.black.withValues(alpha: 0.05),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            child: ListTile(
-              onTap: () async {
-                await Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AdminChatThreadScreen(
-                      thread: t,
-                      userId: widget.userId,
-                      userRole: widget.userRole,
-                    ),
-                  ),
-                );
-                _loadThreads();
-              },
-              leading: CircleAvatar(
-                backgroundColor: color.withValues(alpha: 0.15),
-                child: Icon(icon, color: color),
+        children: [
+          if (_threads.isNotEmpty)
+            ...[
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'Conversations',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                ),
               ),
-              title: Text(
-                t.title.isNotEmpty
-                    ? t.title
-                    : (isBroadcastAll
-                        ? 'Broadcast: All employees'
-                        : isBroadcastRole
-                            ? 'Broadcast: ${t.targetRole ?? ''}'
-                            : 'Direct chat'),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-              subtitle: subtitle != null
-                  ? Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    )
-                  : null,
-              trailing: t.unreadCount > 0
-                  ? Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(
-                        t.unreadCount > 9
-                            ? '9+'
-                            : t.unreadCount.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    )
-                  : null,
+              ..._threads.map(_buildThreadTile),
+              const SizedBox(height: 14),
+            ],
+          const Padding(
+            padding: EdgeInsets.only(bottom: 8),
+            child: Text(
+              'People',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
             ),
-          );
-        },
+          ),
+          ..._users.map(_buildUserTile),
+        ],
       ),
     );
+  }
+
+  Widget _buildThreadTile(ChatThread t) {
+    final isBroadcastAll = t.type == 'broadcast_all';
+    final isBroadcastRole = t.type == 'broadcast_role';
+    final isDirect = t.type == 'direct';
+
+    IconData icon;
+    Color color;
+    if (isDirect) {
+      icon = Icons.person_outline;
+      color = Colors.blue;
+    } else if (isBroadcastRole) {
+      icon = Icons.groups_outlined;
+      color = Colors.deepOrange;
+    } else {
+      icon = Icons.campaign_outlined;
+      color = Colors.green;
+    }
+
+    final subtitle = _buildSubtitle(t);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 2,
+      shadowColor: Colors.black.withValues(alpha: 0.05),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        onTap: () async {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AdminChatThreadScreen(
+                thread: t,
+                userId: widget.userId,
+                userRole: widget.userRole,
+              ),
+            ),
+          );
+          _loadThreads();
+        },
+        leading: CircleAvatar(
+          backgroundColor: color.withValues(alpha: 0.15),
+          child: Icon(icon, color: color),
+        ),
+        title: Text(
+          t.title.isNotEmpty
+              ? t.title
+              : (isBroadcastAll
+                  ? 'Broadcast: All employees'
+                  : isBroadcastRole
+                      ? 'Broadcast: ${t.targetRole ?? ''}'
+                      : 'Direct chat'),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: subtitle != null
+            ? Text(
+                subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              )
+            : null,
+        trailing: t.unreadCount > 0
+            ? Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  t.unreadCount > 9 ? '9+' : t.unreadCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildUserTile(ChatUser user) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 1,
+      shadowColor: Colors.black.withValues(alpha: 0.04),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ListTile(
+        onTap: () => _openDirectChat(user),
+        leading: CircleAvatar(
+          backgroundColor: const Color(0xFFceb56e).withValues(alpha: 0.2),
+          child: Text(
+            user.name.isNotEmpty ? user.name[0].toUpperCase() : '?',
+            style: const TextStyle(
+              color: Color(0xFF8d7536),
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        title: Text(user.name),
+        subtitle: Text(user.displayRole),
+        trailing: const Icon(Icons.chat_outlined, size: 20),
+      ),
+    );
+  }
+
+  Future<void> _openDirectChat(ChatUser user) async {
+    try {
+      final thread = await ChatService.openDirectThread(
+        userAId: widget.userId,
+        userBId: user.id,
+        userRole: widget.userRole,
+        title: user.name,
+      );
+
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => AdminChatThreadScreen(
+            thread: thread,
+            userId: widget.userId,
+            userRole: widget.userRole,
+          ),
+        ),
+      );
+      _loadThreads();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '').trim())),
+      );
+    }
   }
 
   String? _buildSubtitle(ChatThread t) {

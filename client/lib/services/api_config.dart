@@ -28,10 +28,10 @@ class ApiConfig {
         if (Platform.isAndroid) {
           return 'http://10.0.2.2:8000/api'; // Android Emulator
         } else {
-          return 'http://192.168.1.9:8000/api'; // Physical Device / iOS
+          return 'http://192.168.1.11:8000/api'; // Physical Device / iOS
         }
       } catch (_) {
-        return 'http://192.168.1.9:8000/api';
+        return 'http://192.168.1.11:8000/api';
       }
     }
   }
