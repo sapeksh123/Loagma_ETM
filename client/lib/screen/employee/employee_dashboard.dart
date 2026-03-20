@@ -271,47 +271,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
-  Future<bool> _showExitConfirmation(BuildContext context) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            title: const Row(
-              children: [
-                Icon(
-                  Icons.warning_amber_rounded,
-                  color: Colors.orange,
-                  size: 28,
-                ),
-                SizedBox(width: 12),
-                Text('Confirm Exit'),
-              ],
-            ),
-            content: const Text(
-              'Are you sure you want to go back? You will be logged out.',
-              style: TextStyle(fontSize: 16),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.of(context).pop(true),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red,
-                  foregroundColor: Colors.white,
-                ),
-                child: const Text('Exit'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-  }
-
   Future<void> _showLogoutConfirmation(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -356,17 +315,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        final shouldPop = await _showExitConfirmation(context);
-        if (shouldPop && context.mounted) {
-          await AuthService.logout();
-          if (context.mounted) {
-            Navigator.pushReplacementNamed(context, '/login');
-          }
-        }
-      },
+      canPop: true,
       child: DefaultTabController(
         length: 7, // one for each category tab
         child: Scaffold(
