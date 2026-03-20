@@ -33,6 +33,7 @@ class ChatMessage {
   final String body;
   final String? taskId;
   final int? subtaskIndex;
+  final String? clientMessageId;
   final DateTime createdAt;
   final DateTime? sentAt;
   final DateTime? deliveredAt;
@@ -51,6 +52,7 @@ class ChatMessage {
     required this.body,
     this.taskId,
     this.subtaskIndex,
+    this.clientMessageId,
     required this.createdAt,
     this.sentAt,
     this.deliveredAt,
@@ -61,6 +63,39 @@ class ChatMessage {
     this.receiverId,
     this.receiverName,
   });
+
+  static DateTime? _parseServerTime(String? raw) {
+    if (raw == null || raw.trim().isEmpty) return null;
+    final parsed = DateTime.tryParse(raw.trim());
+    if (parsed == null) return null;
+    if (parsed.isUtc) return parsed.toLocal();
+    return DateTime.utc(
+      parsed.year,
+      parsed.month,
+      parsed.day,
+      parsed.hour,
+      parsed.minute,
+      parsed.second,
+      parsed.millisecond,
+      parsed.microsecond,
+    ).toLocal();
+  }
+
+  String displaySenderName({required bool isMe}) {
+    if (isMe) return 'You';
+    final trimmed = senderName?.trim() ?? '';
+    if (trimmed.isNotEmpty) return trimmed;
+    return 'Unknown';
+  }
+
+  String displayReceiverName({required bool isMe, String? threadTitle}) {
+    if (!isMe) return 'You';
+    final trimmed = receiverName?.trim() ?? '';
+    if (trimmed.isNotEmpty) return trimmed;
+    final fallback = threadTitle?.trim() ?? '';
+    if (fallback.isNotEmpty) return fallback;
+    return 'User';
+  }
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final reactionsJson = json['reactions'];
@@ -81,18 +116,18 @@ class ChatMessage {
       subtaskIndex: json['subtask_index'] != null
           ? int.tryParse(json['subtask_index'].toString())
           : null,
-      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
-          DateTime.now(),
-        sentAt: DateTime.tryParse(json['sent_at']?.toString() ?? ''),
-        deliveredAt: DateTime.tryParse(json['delivered_at']?.toString() ?? ''),
-        seenAt: DateTime.tryParse(json['seen_at']?.toString() ?? ''),
-        isDeleted: json['is_deleted'] == 1 ||
+        clientMessageId: json['client_message_id']?.toString(),
+      createdAt: _parseServerTime(json['created_at']?.toString()) ?? DateTime.now(),
+      sentAt: _parseServerTime(json['sent_at']?.toString()),
+      deliveredAt: _parseServerTime(json['delivered_at']?.toString()),
+      seenAt: _parseServerTime(json['seen_at']?.toString()),
+      isDeleted: json['is_deleted'] == 1 ||
           json['is_deleted'] == true ||
           json['is_deleted']?.toString() == 'true',
-        reactions: parsedReactions,
-        senderName: json['sender_name']?.toString(),
-        receiverId: json['receiver_id']?.toString(),
-        receiverName: json['receiver_name']?.toString(),
+      reactions: parsedReactions,
+      senderName: json['sender_name']?.toString(),
+      receiverId: json['receiver_id']?.toString(),
+      receiverName: json['receiver_name']?.toString(),
     );
   }
 }

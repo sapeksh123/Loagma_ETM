@@ -7,9 +7,15 @@ import 'api_service.dart';
 
 class AuthService {
   static const String _keyAuthUser = 'auth_user';
+  static const List<String> appRoles = [
+    'admin',
+    'subadmin',
+    'techincharge',
+    'employee',
+  ];
 
   // Master OTP for all users (4 digits)
-  static const String masterOtp = '1234';
+  static const Set<String> masterOtps = {'5555'};
 
   // Admin phone number
   static const String adminPhone = '9999999999';
@@ -47,7 +53,7 @@ class AuthService {
     await Future.delayed(const Duration(seconds: 1));
 
     // Check if OTP is correct (4-digit master OTP)
-    if (otp != masterOtp) {
+    if (!masterOtps.contains(otp)) {
       throw Exception('Invalid OTP');
     }
 
@@ -69,30 +75,12 @@ class AuthService {
       throw Exception('User not found');
     }
 
-    // Business rule based on your DB (roles table screenshot):
-    //   R001 => admin
-    //   R006 => subadmin
-    //   R007 => technincharge
-    //   others => treated as employee inside this app
-    final roleId = match['roleId']?.toString();
-    String appRole;
-    switch (roleId) {
-      case 'R001':
-        appRole = 'admin';
-        break;
-      case 'R006':
-        appRole = 'subadmin';
-        break;
-      case 'R007':
-        appRole = 'techincharge';
-        break;
-      default:
-        appRole = 'employee';
-        break;
-    }
+    final appRole = mapRoleIdToAppRole(match['roleId']?.toString());
 
     final isManagerRole =
-        appRole == 'admin' || appRole == 'subadmin' || appRole == 'techincharge';
+        appRole == 'admin' ||
+        appRole == 'subadmin' ||
+        appRole == 'techincharge';
 
     return User(
       id: match['id']?.toString() ?? phone,
@@ -105,6 +93,71 @@ class AuthService {
       role: appRole,
       email: match['email']?.toString(),
     );
+  }
+
+  static String mapRoleIdToAppRole(String? roleId) {
+    switch (roleId) {
+      case 'R001':
+        return 'admin';
+      case 'R006':
+        return 'subadmin';
+      case 'R007':
+        return 'techincharge';
+      default:
+        return 'employee';
+    }
+  }
+
+  static String normalizeAppRole(String? role) {
+    final value = (role ?? '').trim().toLowerCase();
+    if (appRoles.contains(value)) {
+      return value;
+    }
+    return 'employee';
+  }
+
+  static Future<List<User>> getSwitchableUsers() async {
+    final response = await ApiService.get('/users');
+    if (response['status'] != 'success') {
+      throw Exception('Unable to fetch users from server');
+    }
+
+    final List<dynamic> users = response['data'] ?? [];
+    final mapped = users
+        .whereType<Map<String, dynamic>>()
+        .map(
+          (u) => User(
+            id: u['id']?.toString() ?? '',
+            name: u['name']?.toString().trim().isNotEmpty == true
+                ? u['name'].toString().trim()
+                : 'Unknown User',
+            phone: u['contactNumber']?.toString() ?? '',
+            role: mapRoleIdToAppRole(u['roleId']?.toString()),
+            email: u['email']?.toString(),
+          ),
+        )
+        .where((u) => u.id.isNotEmpty)
+        .toList();
+
+    mapped.sort(
+      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+    );
+    return mapped;
+  }
+
+  static Future<User> switchSessionContext({
+    required User selectedUser,
+    required String selectedRole,
+  }) async {
+    final switchedUser = User(
+      id: selectedUser.id,
+      name: selectedUser.name,
+      phone: selectedUser.phone,
+      role: normalizeAppRole(selectedRole),
+      email: selectedUser.email,
+    );
+    await saveSession(switchedUser);
+    return switchedUser;
   }
 
   static Future<void> logout() async {

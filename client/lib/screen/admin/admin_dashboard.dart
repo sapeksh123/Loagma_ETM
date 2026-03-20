@@ -9,6 +9,8 @@ import 'tasks_screen.dart';
 import 'attendance_screen.dart';
 import 'admin_chat_list_screen.dart';
 import 'notepad_list_screen.dart';
+import '../../widgets/developer_switch_dialog.dart';
+import '../employee/employee_dashboard.dart';
 
 class AdminDashboard extends StatefulWidget {
   final String? userId;
@@ -246,6 +248,36 @@ class _AdminDashboardState extends State<AdminDashboard> {
     }
   }
 
+  Future<void> _openDeveloperSwitch() async {
+    final switchedUser = await DeveloperSwitchDialog.show(context);
+    if (!mounted || switchedUser == null) return;
+
+    if (switchedUser.role == 'employee') {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EmployeeDashboard(
+            userId: switchedUser.id,
+            userRole: switchedUser.role,
+            userName: switchedUser.name,
+          ),
+        ),
+      );
+      return;
+    }
+
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AdminDashboard(
+          userId: switchedUser.id,
+          userName: switchedUser.name,
+          userRole: switchedUser.role,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -320,11 +352,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               icon: const Icon(Icons.notifications_outlined),
               onPressed: () {},
             ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              tooltip: 'Logout',
-              onPressed: () => _showLogoutConfirmation(context),
-            ),
+         
           ],
         ),
         drawer: AppDrawer(
@@ -339,6 +367,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
             });
           },
           onLogout: () => _showLogoutConfirmation(context),
+          onDeveloperSwitch: _openDeveloperSwitch,
           userName: widget.userName ?? '',
           userRole: widget.userRole,
         ),

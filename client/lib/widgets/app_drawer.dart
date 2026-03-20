@@ -4,6 +4,7 @@ class AppDrawer extends StatelessWidget {
   final int selectedIndex;
   final Function(int) onItemSelected;
   final VoidCallback onLogout;
+  final VoidCallback? onDeveloperSwitch;
   final String userName;
   final String userRole;
 
@@ -12,6 +13,7 @@ class AppDrawer extends StatelessWidget {
     required this.selectedIndex,
     required this.onItemSelected,
     required this.onLogout,
+    this.onDeveloperSwitch,
     required this.userName,
     required this.userRole,
   });
@@ -34,8 +36,25 @@ class AppDrawer extends StatelessWidget {
         children: [
           _buildDrawerHeader(),
           Expanded(child: _buildMenuList(context)),
+          _buildDeveloperTrigger(context),
           _buildLogoutTile(context),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDeveloperTrigger(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onDoubleTap: () async {
+        if (onDeveloperSwitch == null) return;
+        Navigator.pop(context);
+        await Future.delayed(const Duration(milliseconds: 140));
+        onDeveloperSwitch!.call();
+      },
+      child: const SizedBox(
+        width: double.infinity,
+        height: 44,
       ),
     );
   }

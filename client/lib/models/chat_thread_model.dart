@@ -24,7 +24,19 @@ class ChatThread {
       if (v == null) return null;
       final s = v.toString();
       if (s.isEmpty) return null;
-      return DateTime.tryParse(s);
+      final parsed = DateTime.tryParse(s);
+      if (parsed == null) return null;
+      if (parsed.isUtc) return parsed.toLocal();
+      return DateTime.utc(
+        parsed.year,
+        parsed.month,
+        parsed.day,
+        parsed.hour,
+        parsed.minute,
+        parsed.second,
+        parsed.millisecond,
+        parsed.microsecond,
+      ).toLocal();
     }
 
     return ChatThread(

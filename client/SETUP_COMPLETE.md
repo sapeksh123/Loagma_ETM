@@ -22,7 +22,7 @@ The Flutter app has been built and is now running on Windows.
 #### 3. **OTP Verification Screen**
 - 4-digit OTP input fields
 - Auto-focus between fields
-- Master OTP displayed: `1234`
+- Master OTP displayed: `5555`
 - Resend OTP functionality
 - Loading state during verification
 
@@ -41,14 +41,14 @@ The Flutter app has been built and is now running on Windows.
 ### Admin Access
 ```
 Phone: 9999999999
-OTP: 1234
+OTP: 5555
 ```
 
 ### Employee Access
 ```
 Phone: Any 10-digit number (except 9999999999)
 Examples: 8888888888, 7777777777, 1234567890
-OTP: 1234
+OTP: 5555
 ```
 
 ---
@@ -147,7 +147,7 @@ flutter run -d android
 
 ### Static Authentication
 - No backend required for testing
-- Master OTP: `1234` (works for all users)
+- Master OTP: `5555` (works for all users)
 - Role determined by phone number
 - Instant verification (simulated 1s delay)
 
