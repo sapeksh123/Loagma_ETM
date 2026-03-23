@@ -231,6 +231,7 @@ class EmployeeDetailsScreen extends StatelessWidget {
           ],
         ),
       ),
+    ),
     );
   }
 
@@ -259,8 +260,7 @@ class EmployeeDetailsScreen extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
+      );
   }
 }
 

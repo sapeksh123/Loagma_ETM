@@ -1,0 +1,112 @@
+﻿[
+    {
+        "method":  "GET",
+        "route":  "/users?per_page=5\u0026page=1",
+        "status":  "TIMEOUT",
+        "category":  "FAIL",
+        "latency_ms":  30410,
+        "tag":  "bootstrap",
+        "frontend":  "unknown",
+        "body":  "The operation has timed out."
+    },
+    {
+        "method":  "POST",
+        "route":  "/tasks",
+        "status":  "TIMEOUT",
+        "category":  "FAIL",
+        "latency_ms":  30168,
+        "tag":  "setup",
+        "frontend":  "task_service",
+        "body":  "The operation has timed out"
+    },
+    {
+        "method":  "GET",
+        "route":  "/tasks?user_id=U029\u0026user_role=admin",
+        "status":  "TIMEOUT",
+        "category":  "FAIL",
+        "latency_ms":  30032,
+        "tag":  "setup-fallback",
+        "frontend":  "task_service",
+        "body":  "The operation has timed out."
+    },
+    {
+        "method":  "POST",
+        "route":  "/notes",
+        "status":  201,
+        "category":  "PASS",
+        "latency_ms":  19941,
+        "tag":  "setup",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"success\",\"message\":\"Note created\",\"data\":{\"id\":\"863ae5bd-e751-4f59-b151-3948847cb2d4\",\"user_id\":\"U029\",\"folder_name\":\"General\",\"title\":\"API Audit Note\",\"content\":\"hello\",\"createdAt\":\"2026-03-23 08:18:51\",\"updatedAt\":\"2026-03-23 08:18:51\"}}"
+    },
+    {
+        "method":  "PATCH",
+        "route":  "/notifications/{id}/read",
+        "status":  "UNTESTED",
+        "category":  "UNTESTED",
+        "latency_ms":  0,
+        "tag":  "",
+        "frontend":  "notification_service",
+        "body":  "No notification id available"
+    },
+    {
+        "method":  "GET",
+        "route":  "/chat/threads",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1988,
+        "tag":  "",
+        "frontend":  "chat_service",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"f965046a-7eb4-4096-896f-21407e59c73c\",\"type\":\"direct\",\"title\":\"Maharaj\",\"created_by\":\"U021\",\"target_user_id\":\"U029\",\"target_role\":null,\"last_message_at\":\"2026-03-23 08:00:01\",\"unread_count\":0,\"last_delivered_message_id\":\"00ef3364-a9f4-47ab-b937-11ddacd295ac\",\"last_read_message_id\":\"00ef3364-a9f4-47ab-b937-11ddacd295ac\",\"last_message_body\":\"chat api check\",\"last_message_id\":\"00ef3364-a9f4-47ab-b937-11ddacd295ac\",\"last_message_sender_id\":\"U029\",\"last_message_sort_key\":1774252801014327,\"counterpart_user_id\":\"U021\",\"counterpart_name\":\"Maharaj\",\"counterpart_is_online\":true,\"counterpart_last_seen_at\":null},{\"id\":\"fc10b362-cc13-4eda-a2a4-ca52bd7c111a\",\"type\":\"direct\",\"title\":\"Ishant Patel\",\"created_by\":\"U029\",\"target_user_id\":\"U017\",\"target_role\":null,\"last_message_at\":\"2026-03-20 16:42:37\",\"unread_count\":0,\"last_delivered_message_id\":\"9e9bffe4-9ad1-4050-b9bb- ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/threads/direct",
+        "status":  "ERR",
+        "category":  "FAIL",
+        "latency_ms":  30021,
+        "tag":  "setup",
+        "frontend":  "chat_service",
+        "body":  "The underlying connection was closed: A connection that was expected to be kept alive was closed by the server."
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/realtime/auth",
+        "status":  "TIMEOUT",
+        "category":  "FAIL",
+        "latency_ms":  20033,
+        "tag":  "",
+        "frontend":  "chat_service/chat_realtime_client",
+        "body":  "The operation has timed out"
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/threads/direct",
+        "status":  "TIMEOUT",
+        "category":  "FAIL",
+        "latency_ms":  30032,
+        "tag":  "",
+        "frontend":  "chat_service",
+        "body":  "The operation has timed out"
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/threads/broadcast",
+        "status":  "TIMEOUT",
+        "category":  "FAIL",
+        "latency_ms":  30029,
+        "tag":  "",
+        "frontend":  "not observed in client",
+        "body":  "The operation has timed out"
+    },
+    {
+        "method":  "GET",
+        "route":  "/chat/threads/{id}/messages",
+        "status":  "UNTESTED",
+        "category":  "UNTESTED",
+        "latency_ms":  0,
+        "tag":  "",
+        "frontend":  "chat_service",
+        "body":  "No thread id"
+    }
+]

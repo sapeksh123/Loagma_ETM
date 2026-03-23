@@ -74,14 +74,25 @@ For the realtime chat module to work smoothly in production, verify all of the f
 5. Start the required long-running processes in production:
    `php artisan queue:work`
    `php artisan reverb:start --host=0.0.0.0 --port=8080`
-6. Make sure the public app URL and Reverb public host match the deployed domain:
+6. Set separate public and internal Reverb endpoints:
    `APP_URL=https://your-domain`
+   Public websocket values for clients:
    `REVERB_HOST=your-domain`
    `REVERB_PORT=443`
    `REVERB_SCHEME=https`
-7. If the runtime does not have the PHP Redis extension installed, install `predis/predis` and switch:
+   Internal broadcast dispatch values for Laravel server-to-Reverb calls:
+   `REVERB_INTERNAL_HOST=127.0.0.1`
+   `REVERB_INTERNAL_PORT=10000`
+   `REVERB_INTERNAL_SCHEME=http`
+7. Keep broadcast HTTP dispatch timeouts short to avoid blocking API responses when Reverb is unhealthy:
+   `REVERB_HTTP_TIMEOUT=3`
+   `REVERB_HTTP_CONNECT_TIMEOUT=2`
+8. Emergency fallback (if chat APIs stall due broadcast dispatch):
+   `CHAT_BROADCAST_ENABLED=false`
+   This keeps chat APIs responsive while temporarily disabling realtime push events.
+9. If the runtime does not have the PHP Redis extension installed, install `predis/predis` and switch:
    `REDIS_CLIENT=predis`
-8. Verify the new chat endpoints are reachable:
+10. Verify the new chat endpoints are reachable:
    `POST /api/chat/realtime/auth`
    `POST /api/chat/threads/{id}/receipts`
    `GET /api/chat/threads/{id}/messages?before_sort_key=...`

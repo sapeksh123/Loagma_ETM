@@ -1054,6 +1054,15 @@ class ChatController extends Controller
 
     private function shouldBroadcast(Request $request): bool
     {
+        $enabled = filter_var(
+            (string) env('CHAT_BROADCAST_ENABLED', 'true'),
+            FILTER_VALIDATE_BOOLEAN
+        );
+
+        if ($enabled === false) {
+            return false;
+        }
+
         $header = strtolower((string) $request->header('X-Skip-Broadcast', ''));
         if ($header === '1' || $header === 'true' || $header === 'yes') {
             return false;

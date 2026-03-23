@@ -1,0 +1,392 @@
+﻿[
+    {
+        "method":  "GET",
+        "route":  "/users?per_page=5\u0026page=1",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  2271,
+        "tag":  "bootstrap",
+        "frontend":  "unknown",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"U029\",\"employeeCode\":\"EMP029\",\"name\":\"Om Lohiya\",\"email\":\"om.lohiya@loagma.com\",\"contactNumber\":\"8019500007\",\"alternativeNumber\":\"8019500000\",\"roleId\":\"R001\",\"roles\":\"[]\",\"departmentId\":\"D001\",\"isActive\":1,\"lastLogin\":\"2026-03-20 14:33:01\",\"createdAt\":\"2026-03-20 14:33:01\",\"updatedAt\":\"2026-03-20 14:33:01\",\"dateOfBirth\":\"1995-07-10 00:00:00\",\"gender\":\"Male\",\"image\":\"om.jpg\",\"city\":\"Bhopal\",\"state\":\"Madhya Pradesh\",\"country\":\"India\"},{\"id\":\"U027\",\"employeeCode\":\"EMP027\",\"name\":\"Test1 User\",\"email\":\"test1@loagma.com\",\"contactNumber\":\"9999999999\",\"alternativeNumber\":\"9999990000\",\"roleId\":\"R002\",\"roles\":\"[]\",\"departmentId\":\"D003\",\"isActive\":1,\"lastLogin\":\"2026-03-20 14:29:43\",\"createdAt\":\"2026-03-20 14:29:43\",\"updatedAt\":\"2026-03-20 14:29:43\",\"dateOfBirth\":\"2000-01-01 00:00:00\",\"gender\":\"Male\",\"image\":\"test1.jpg\",\"city\":\"Bhopal\",\"state\":\"Madhya Pradesh\",\"country\":\"India\"},{\"id\":\"U021\",\"employeeCode\":\"EMP021\",\"name\":\"Maharaj\",\"email\":\"maharaj@loagma.com\",\"contactNumber\":\"7981374613\",\"alternativeNumber\":\"7981374000\",\"roleId\":\"R002\",\"roles\":\"[]\",\"departmentId\":\"D003\",\"isActive\":1,\"lastLogin\":\"2026-03-20 13:39:30\",\"createdAt\":\"2026-03-20 13:39:30\",\"update ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "POST",
+        "route":  "/tasks",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  559,
+        "tag":  "setup",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"title\":[\"The title field is required.\"],\"category\":[\"The category field is required.\"],\"priority\":[\"The priority field is required.\"],\"created_by\":[\"The created by field is required.\"],\"assigned_to\":[\"The assigned to field is required.\"]}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/tasks?user_id=U029\u0026user_role=admin",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  3430,
+        "tag":  "setup-fallback",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"3c0b7a05-8fa0-4c20-91bd-fb14b7bc9690\",\"title\":\"API Audit Task\",\"description\":\"created by audit\",\"subtasks\":[{\"text\":\"one\",\"status\":\"assigned\"},{\"text\":\"two\",\"status\":\"assigned\"}],\"category\":\"project\",\"priority\":\"medium\",\"status\":\"assigned\",\"need_help_note\":null,\"deadline_date\":null,\"deadline_time\":null,\"created_by\":\"U029\",\"assigned_to\":\"U021\",\"createdAt\":\"2026-03-23 08:25:46\",\"updatedAt\":\"2026-03-23 08:25:46\",\"creator_name\":\"Om Lohiya\",\"assignee_name\":\"Maharaj\",\"assignee_code\":\"EMP021\"},{\"id\":\"89a58c56-e648-4baa-984d-f5b2b5b08665\",\"title\":\"API Audit Task\",\"description\":\"created by audit\",\"subtasks\":[{\"text\":\"one\",\"status\":\"assigned\"},{\"text\":\"two\",\"status\":\"assigned\"}],\"category\":\"project\",\"priority\":\"medium\",\"status\":\"assigned\",\"need_help_note\":null,\"deadline_date\":null,\"deadline_time\":null,\"created_by\":\"U029\",\"assigned_to\":\"U021\",\"createdAt\":\"2026-03-23 08:18:48\",\"updatedAt\":\"2026-03-23 08:18:48\",\"creator_name\":\"Om Lohiya\",\"assignee_name\":\"Maharaj\",\"assignee_code\":\"EMP021\"},{\"id\":\"63da5276-f85e-4f8f-9eea-cf0fc6f26291\",\"title\":\"API Audit Task\",\"description\":\"created by audit\",\"subtasks\":[{\"text\":\"one\",\"status\":\"assigned\"},{\"text\":\"two\",\"status\":\" ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "POST",
+        "route":  "/notes",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  488,
+        "tag":  "setup",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"user_id\":[\"The user id field is required.\"],\"folder_name\":[\"The folder name field is required.\"],\"title\":[\"The title field is required.\"]}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/health",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  571,
+        "tag":  "",
+        "frontend":  "none",
+        "body":  "{\"status\":\"OK\",\"message\":\"API Working\"}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/db-test",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1483,
+        "tag":  "",
+        "frontend":  "none",
+        "body":  "{\"status\":\"success\",\"database\":\"Connected\",\"result\":[{\"test\":1}]}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/users?per_page=2\u0026page=1",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1729,
+        "tag":  "",
+        "frontend":  "unknown",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"U029\",\"employeeCode\":\"EMP029\",\"name\":\"Om Lohiya\",\"email\":\"om.lohiya@loagma.com\",\"contactNumber\":\"8019500007\",\"alternativeNumber\":\"8019500000\",\"roleId\":\"R001\",\"roles\":\"[]\",\"departmentId\":\"D001\",\"isActive\":1,\"lastLogin\":\"2026-03-20 14:33:01\",\"createdAt\":\"2026-03-20 14:33:01\",\"updatedAt\":\"2026-03-20 14:33:01\",\"dateOfBirth\":\"1995-07-10 00:00:00\",\"gender\":\"Male\",\"image\":\"om.jpg\",\"city\":\"Bhopal\",\"state\":\"Madhya Pradesh\",\"country\":\"India\"},{\"id\":\"U027\",\"employeeCode\":\"EMP027\",\"name\":\"Test1 User\",\"email\":\"test1@loagma.com\",\"contactNumber\":\"9999999999\",\"alternativeNumber\":\"9999990000\",\"roleId\":\"R002\",\"roles\":\"[]\",\"departmentId\":\"D003\",\"isActive\":1,\"lastLogin\":\"2026-03-20 14:29:43\",\"createdAt\":\"2026-03-20 14:29:43\",\"updatedAt\":\"2026-03-20 14:29:43\",\"dateOfBirth\":\"2000-01-01 00:00:00\",\"gender\":\"Male\",\"image\":\"test1.jpg\",\"city\":\"Bhopal\",\"state\":\"Madhya Pradesh\",\"country\":\"India\"},{\"id\":\"U021\",\"employeeCode\":\"EMP021\",\"name\":\"Maharaj\",\"email\":\"maharaj@loagma.com\",\"contactNumber\":\"7981374613\",\"alternativeNumber\":\"7981374000\",\"roleId\":\"R002\",\"roles\":\"[]\",\"departmentId\":\"D003\",\"isActive\":1,\"lastLogin\":\"2026-03-20 13:39:30\",\"createdAt\":\"2026-03-20 13:39:30\",\"update ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "GET",
+        "route":  "/users/by-contact/8019500007",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1920,
+        "tag":  "",
+        "frontend":  "auth_service",
+        "body":  "{\"status\":\"success\",\"data\":{\"id\":\"U029\",\"employeeCode\":\"EMP029\",\"name\":\"Om Lohiya\",\"email\":\"om.lohiya@loagma.com\",\"contactNumber\":\"8019500007\",\"alternativeNumber\":\"8019500000\",\"roleId\":\"R001\",\"roles\":\"[]\",\"departmentId\":\"D001\",\"isActive\":1,\"lastLogin\":\"2026-03-20 14:33:01\",\"createdAt\":\"2026-03-20 14:33:01\",\"updatedAt\":\"2026-03-20 14:33:01\",\"dateOfBirth\":\"1995-07-10 00:00:00\",\"gender\":\"Male\",\"image\":\"om.jpg\",\"city\":\"Bhopal\",\"state\":\"Madhya Pradesh\",\"country\":\"India\"}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/roles",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1861,
+        "tag":  "",
+        "frontend":  "not observed in client",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"R001\",\"name\":\"admin\",\"createdAt\":\"2025-02-24 12:11:05\"},{\"id\":\"R002\",\"name\":\"salesman\",\"createdAt\":\"2025-02-24 12:11:05\"},{\"id\":\"R003\",\"name\":\"telecaller\",\"createdAt\":\"2025-02-24 12:11:05\"},{\"id\":\"R004\",\"name\":\"manager\",\"createdAt\":\"2025-02-24 06:06:00\"},{\"id\":\"R005\",\"name\":\"developer\",\"createdAt\":\"2026-02-27 10:16:44\"},{\"id\":\"R006\",\"name\":\"subadmin\",\"createdAt\":\"2026-03-09 09:06:39\"},{\"id\":\"R007\",\"name\":\"techincharge\",\"createdAt\":\"2026-03-09 09:07:17\"}]}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/departments",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1415,
+        "tag":  "",
+        "frontend":  "not observed in client",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"D001\",\"name\":\"Human Resources\",\"createdAt\":\"2025-02-24 12:09:10\"},{\"id\":\"D002\",\"name\":\"Finance\",\"createdAt\":\"2025-02-24 12:09:10\"},{\"id\":\"D003\",\"name\":\"Sales\",\"createdAt\":\"2025-02-24 09:10:00\"},{\"id\":\"D004\",\"name\":\"IT Support\",\"createdAt\":\"2025-02-24 12:09:10\"},{\"id\":\"D005\",\"name\":\"Marketing\",\"createdAt\":\"2025-02-24 12:09:10\"}]}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/tasks?user_id=U029\u0026user_role=admin",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  3816,
+        "tag":  "",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"3c0b7a05-8fa0-4c20-91bd-fb14b7bc9690\",\"title\":\"API Audit Task\",\"description\":\"created by audit\",\"subtasks\":[{\"text\":\"one\",\"status\":\"assigned\"},{\"text\":\"two\",\"status\":\"assigned\"}],\"category\":\"project\",\"priority\":\"medium\",\"status\":\"assigned\",\"need_help_note\":null,\"deadline_date\":null,\"deadline_time\":null,\"created_by\":\"U029\",\"assigned_to\":\"U021\",\"createdAt\":\"2026-03-23 08:25:46\",\"updatedAt\":\"2026-03-23 08:25:46\",\"creator_name\":\"Om Lohiya\",\"assignee_name\":\"Maharaj\",\"assignee_code\":\"EMP021\"},{\"id\":\"89a58c56-e648-4baa-984d-f5b2b5b08665\",\"title\":\"API Audit Task\",\"description\":\"created by audit\",\"subtasks\":[{\"text\":\"one\",\"status\":\"assigned\"},{\"text\":\"two\",\"status\":\"assigned\"}],\"category\":\"project\",\"priority\":\"medium\",\"status\":\"assigned\",\"need_help_note\":null,\"deadline_date\":null,\"deadline_time\":null,\"created_by\":\"U029\",\"assigned_to\":\"U021\",\"createdAt\":\"2026-03-23 08:18:48\",\"updatedAt\":\"2026-03-23 08:18:48\",\"creator_name\":\"Om Lohiya\",\"assignee_name\":\"Maharaj\",\"assignee_code\":\"EMP021\"},{\"id\":\"63da5276-f85e-4f8f-9eea-cf0fc6f26291\",\"title\":\"API Audit Task\",\"description\":\"created by audit\",\"subtasks\":[{\"text\":\"one\",\"status\":\"assigned\"},{\"text\":\"two\",\"status\":\" ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "POST",
+        "route":  "/tasks",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  477,
+        "tag":  "",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"title\":[\"The title field is required.\"],\"category\":[\"The category field is required.\"],\"priority\":[\"The priority field is required.\"],\"created_by\":[\"The created by field is required.\"],\"assigned_to\":[\"The assigned to field is required.\"]}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/tasks/__missing__",
+        "status":  404,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  1544,
+        "tag":  "",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Task not found\"}"
+    },
+    {
+        "method":  "PUT",
+        "route":  "/tasks/__missing__",
+        "status":  404,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  1405,
+        "tag":  "",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Task not found\"}"
+    },
+    {
+        "method":  "DELETE",
+        "route":  "/tasks/__missing__",
+        "status":  404,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  1475,
+        "tag":  "",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Task not found\"}"
+    },
+    {
+        "method":  "PATCH",
+        "route":  "/tasks/__missing__/status",
+        "status":  500,
+        "category":  "FAIL",
+        "latency_ms":  488,
+        "tag":  "",
+        "frontend":  "task_service",
+        "body":  "{\"status\":\"error\",\"message\":\"The status field is required.\"}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/notes?user_id=U029",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1647,
+        "tag":  "",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"605ed879-c27f-4db4-8645-5edf859ae6d2\",\"user_id\":\"U029\",\"folder_name\":\"\",\"title\":\"\",\"content\":\"me-updated\",\"createdAt\":\"2026-03-23 07:33:19\",\"updatedAt\":\"2026-03-23 08:27:18\"},{\"id\":\"19964e9f-c403-49de-89fd-b370304407c2\",\"user_id\":\"U029\",\"folder_name\":\"General\",\"title\":\"API Audit Note\",\"content\":\"me-updated\",\"createdAt\":\"2026-03-23 08:26:54\",\"updatedAt\":\"2026-03-23 08:27:18\"},{\"id\":\"863ae5bd-e751-4f59-b151-3948847cb2d4\",\"user_id\":\"U029\",\"folder_name\":\"General\",\"title\":\"API Audit Note\",\"content\":\"me-updated\",\"createdAt\":\"2026-03-23 08:18:51\",\"updatedAt\":\"2026-03-23 08:27:18\"},{\"id\":\"ef61fe76-952c-4e29-a1a0-5189f0e83c09\",\"user_id\":\"U029\",\"folder_name\":\"General\",\"title\":\"API Audit Note\",\"content\":\"me-updated\",\"createdAt\":\"2026-03-23 08:25:47\",\"updatedAt\":\"2026-03-23 08:27:18\"},{\"id\":\"f06ae2ab-dc6c-4e68-a41f-cf91c77638df\",\"user_id\":\"U029\",\"folder_name\":\"General\",\"title\":\"API Audit Note\",\"content\":\"me-updated\",\"createdAt\":\"2026-03-23 08:15:52\",\"updatedAt\":\"2026-03-23 08:27:18\"},{\"id\":\"fc8da5ff-05fe-41d2-8791-3202892e0e0e\",\"user_id\":\"U029\",\"folder_name\":\"General\",\"title\":\"Another\",\"content\":\"me-updated\",\"createdAt\":\"2026-03-23 08:27:14\",\"updatedAt\":\"2026 ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "POST",
+        "route":  "/notes",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  426,
+        "tag":  "",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"user_id\":[\"The user id field is required.\"],\"folder_name\":[\"The folder name field is required.\"],\"title\":[\"The title field is required.\"]}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/notes/me?user_id=U029",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  2042,
+        "tag":  "",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"success\",\"data\":{\"user_id\":\"U029\",\"content\":\"me-updated\",\"updatedAt\":\"2026-03-23 08:27:18\"}}"
+    },
+    {
+        "method":  "PUT",
+        "route":  "/notes/me",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  525,
+        "tag":  "",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"user_id\":[\"The user id field is required.\"]}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/notes/__missing__?user_id=U029",
+        "status":  404,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  1557,
+        "tag":  "",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Note not found\"}"
+    },
+    {
+        "method":  "PUT",
+        "route":  "/notes/__missing__?user_id=U029",
+        "status":  404,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  1405,
+        "tag":  "",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Note not found\"}"
+    },
+    {
+        "method":  "DELETE",
+        "route":  "/notes/__missing__?user_id=U029",
+        "status":  404,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  1383,
+        "tag":  "",
+        "frontend":  "note_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Note not found\"}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/attendance/today?user_id=U029",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1679,
+        "tag":  "",
+        "frontend":  "attendance_service",
+        "body":  "{\"status\":\"completed\",\"punch_in_time\":\"2026-03-23T13:03:26+05:30\",\"punch_out_time\":\"2026-03-23T13:03:30+05:30\",\"work_duration_seconds\":0,\"break_duration_seconds\":0,\"lunch_break_taken\":false,\"current_break\":null}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/attendance/overview",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  5222,
+        "tag":  "",
+        "frontend":  "attendance_service",
+        "body":  "{\"status\":\"success\",\"message\":\"Attendance overview loaded.\",\"data\":[{\"user_id\":\"U019\",\"name\":\"Abhishake Jaminie\",\"phone\":\"8897777330\",\"role_id\":\"R002\",\"attendance\":{\"status\":\"not_punched_in\",\"punch_in_time\":null,\"punch_out_time\":null,\"work_duration_seconds\":0,\"break_duration_seconds\":0,\"lunch_break_taken\":false,\"current_break\":null},\"is_present\":false},{\"user_id\":\"U009\",\"name\":\"Abhishek Dubey\",\"phone\":\"4444444444\",\"role_id\":\"R007\",\"attendance\":{\"status\":\"not_punched_in\",\"punch_in_time\":null,\"punch_out_time\":null,\"work_duration_seconds\":0,\"break_duration_seconds\":0,\"lunch_break_taken\":false,\"current_break\":null},\"is_present\":false},{\"user_id\":\"U007\",\"name\":\"Arnav Lohiya\",\"phone\":\"8000000000\",\"role_id\":\"R006\",\"attendance\":{\"status\":\"not_punched_in\",\"punch_in_time\":null,\"punch_out_time\":null,\"work_duration_seconds\":0,\"break_duration_seconds\":0,\"lunch_break_taken\":false,\"current_break\":null},\"is_present\":false},{\"user_id\":\"U017\",\"name\":\"Ishant Patel\",\"phone\":\"3333333333\",\"role_id\":\"R005\",\"attendance\":{\"status\":\"not_punched_in\",\"punch_in_time\":null,\"punch_out_time\":null,\"work_duration_seconds\":0,\"break_duration_seconds\":0,\"lunch_break_taken\":false,\"current_break\":null},\"is_present\":fals ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "POST",
+        "route":  "/attendance/punch-in",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  527,
+        "tag":  "",
+        "frontend":  "attendance_service",
+        "body":  "{\"message\":\"The user id field is required.\",\"errors\":{\"user_id\":[\"The user id field is required.\"]}}"
+    },
+    {
+        "method":  "POST",
+        "route":  "/attendance/punch-out",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  519,
+        "tag":  "",
+        "frontend":  "attendance_service",
+        "body":  "{\"message\":\"The user id field is required.\",\"errors\":{\"user_id\":[\"The user id field is required.\"]}}"
+    },
+    {
+        "method":  "POST",
+        "route":  "/attendance/break/start",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  481,
+        "tag":  "",
+        "frontend":  "attendance_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"user_id\":[\"The user id field is required.\"],\"type\":[\"The type field is required.\"]}}"
+    },
+    {
+        "method":  "POST",
+        "route":  "/attendance/break/end",
+        "status":  500,
+        "category":  "FAIL",
+        "latency_ms":  624,
+        "tag":  "",
+        "frontend":  "attendance_service",
+        "body":  "{\"status\":\"error\",\"message\":\"The user id field is required.\"}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/dashboard/summary?user_id=U029\u0026user_role=admin",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  2151,
+        "tag":  "",
+        "frontend":  "dashboard_service",
+        "body":  "{\"status\":\"success\",\"data\":{\"employees_total\":14,\"employees_active\":14,\"tasks_pending\":26,\"present_today\":1,\"absent_today\":13}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/notifications?employee_id=U029",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  1498,
+        "tag":  "",
+        "frontend":  "notification_service",
+        "body":  "{\"status\":\"success\",\"data\":[]}"
+    },
+    {
+        "method":  "POST",
+        "route":  "/notifications",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  531,
+        "tag":  "",
+        "frontend":  "notification_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"sender_role\":[\"The sender role field is required.\"],\"employee_id\":[\"The employee id field is required.\"],\"task_id\":[\"The task id field is required.\"],\"type\":[\"The type field is required.\"],\"message\":[\"The message field is required.\"]}}"
+    },
+    {
+        "method":  "PATCH",
+        "route":  "/notifications/{id}/read",
+        "status":  "UNTESTED",
+        "category":  "UNTESTED",
+        "latency_ms":  0,
+        "tag":  "",
+        "frontend":  "notification_service",
+        "body":  "No notification id available"
+    },
+    {
+        "method":  "GET",
+        "route":  "/chat/threads",
+        "status":  200,
+        "category":  "PASS",
+        "latency_ms":  2441,
+        "tag":  "",
+        "frontend":  "chat_service",
+        "body":  "{\"status\":\"success\",\"data\":[{\"id\":\"f965046a-7eb4-4096-896f-21407e59c73c\",\"type\":\"direct\",\"title\":\"Maharaj\",\"created_by\":\"U021\",\"target_user_id\":\"U029\",\"target_role\":null,\"last_message_at\":\"2026-03-23 08:00:01\",\"unread_count\":0,\"last_delivered_message_id\":\"00ef3364-a9f4-47ab-b937-11ddacd295ac\",\"last_read_message_id\":\"00ef3364-a9f4-47ab-b937-11ddacd295ac\",\"last_message_body\":\"chat api check\",\"last_message_id\":\"00ef3364-a9f4-47ab-b937-11ddacd295ac\",\"last_message_sender_id\":\"U029\",\"last_message_sort_key\":1774252801014327,\"counterpart_user_id\":\"U021\",\"counterpart_name\":\"Maharaj\",\"counterpart_is_online\":true,\"counterpart_last_seen_at\":null},{\"id\":\"fc10b362-cc13-4eda-a2a4-ca52bd7c111a\",\"type\":\"direct\",\"title\":\"Ishant Patel\",\"created_by\":\"U029\",\"target_user_id\":\"U017\",\"target_role\":null,\"last_message_at\":\"2026-03-20 16:42:37\",\"unread_count\":0,\"last_delivered_message_id\":\"9e9bffe4-9ad1-4050-b9bb-686588453394\",\"last_read_message_id\":\"9e9bffe4-9ad1-4050-b9bb-686588453394\",\"last_message_body\":\"hello.... how are you ??\",\"last_message_id\":\"9e9bffe4-9ad1-4050-b9bb-686588453394\",\"last_message_sender_id\":\"U029\",\"last_message_sort_key\":1774024956215934,\"counterpart_user_id\":\"U017\",\"counterpart_name\" ...\u003ctruncated\u003e"
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/threads/direct",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  571,
+        "tag":  "setup",
+        "frontend":  "chat_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"user_b_id\":[\"The user b id field is required.\"]}}"
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/realtime/auth",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  609,
+        "tag":  "",
+        "frontend":  "chat_service/chat_realtime_client",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"socket_id\":[\"The socket id field is required.\"],\"channel_name\":[\"The channel name field is required.\"]}}"
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/threads/direct",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  440,
+        "tag":  "",
+        "frontend":  "chat_service",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"user_b_id\":[\"The user b id field is required.\"]}}"
+    },
+    {
+        "method":  "POST",
+        "route":  "/chat/threads/broadcast",
+        "status":  422,
+        "category":  "VALIDATION_FAIL",
+        "latency_ms":  583,
+        "tag":  "",
+        "frontend":  "not observed in client",
+        "body":  "{\"status\":\"error\",\"message\":\"Validation failed\",\"errors\":{\"scope\":[\"The scope field is required.\"]}}"
+    },
+    {
+        "method":  "GET",
+        "route":  "/chat/threads/{id}/messages",
+        "status":  "UNTESTED",
+        "category":  "UNTESTED",
+        "latency_ms":  0,
+        "tag":  "",
+        "frontend":  "chat_service",
+        "body":  "No thread id"
+    }
+]
