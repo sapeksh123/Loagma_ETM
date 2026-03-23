@@ -112,7 +112,10 @@ class _EmployeeNotificationsScreenState
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
       ),
-      body: _buildBody(),
+      body: SafeArea(
+        top: false,
+        child: _buildBody(),
+      ),
     );
   }
 

@@ -60,9 +60,10 @@ ENV APP_ENV=production \
 # Render sets PORT automatically; default to 8000 for local runs
 EXPOSE 8000
 
-# Cache configuration/routes/views on container start, then run the HTTP server
-CMD php artisan config:cache \
+# Cache configuration/routes/views on container start, then run the HTTP serve
+
+    CMD php artisan config:cache \
     && php artisan route:cache \
     && php artisan view:cache \
-    && php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
-
+    && php artisan reverb:start & \
+    php artisan serve --host=0.0.0.0 --port=${PORT:-8000}

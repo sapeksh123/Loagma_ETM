@@ -47,10 +47,12 @@ class EmployeeDetailsScreen extends StatelessWidget {
         title: const Text('Employee Details'),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
             Card(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(16),
@@ -254,7 +256,8 @@ class EmployeeDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             ...items,
-          ],
+            ],
+          ),
         ),
       ),
     );

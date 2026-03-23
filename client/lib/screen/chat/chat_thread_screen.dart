@@ -103,6 +103,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
   }
 
   Widget _buildMessages() {
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     if (_controller.isLoading && _controller.messages.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -127,7 +128,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       child: ListView.builder(
         controller: _scrollController,
         reverse: true,
-        padding: const EdgeInsets.fromLTRB(12, 16, 12, 20),
+        padding: EdgeInsets.fromLTRB(12, 16, 12, 20 + bottomInset),
         itemCount: _controller.messages.length + (_controller.isLoadingOlder ? 1 : 0),
         itemBuilder: (context, index) {
           if (_controller.isLoadingOlder && index == _controller.messages.length) {

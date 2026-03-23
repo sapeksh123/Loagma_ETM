@@ -328,15 +328,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
           userName: widget.userName ?? '',
           userRole: widget.userRole,
         ),
-        body: _getSelectedScreen(),
+        body: SafeArea(
+          top: false,
+          child: _getSelectedScreen(),
+        ),
       ),
     );
   }
 
   Widget _buildDashboardHome() {
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     return SingleChildScrollView(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + bottomInset + 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

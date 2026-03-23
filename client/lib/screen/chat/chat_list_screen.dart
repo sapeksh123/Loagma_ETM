@@ -61,6 +61,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Widget _buildBody(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     if (_controller.isLoading && _controller.threads.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -86,7 +87,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+      padding: EdgeInsets.fromLTRB(10, 10, 10, 24 + bottomInset),
       children: [
         Container(
           padding: const EdgeInsets.all(10),

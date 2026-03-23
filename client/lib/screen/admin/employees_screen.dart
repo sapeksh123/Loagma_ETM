@@ -117,42 +117,45 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: TextField(
-              decoration: InputDecoration(
-                hintText: 'Search by name, ID, email or phone',
-                prefixIcon: const Icon(Icons.search),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: TextField(
+                decoration: InputDecoration(
+                  hintText: 'Search by name, ID, email or phone',
+                  prefixIcon: const Icon(Icons.search),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
                 ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(color: Colors.grey.shade300),
-                ),
+                onChanged: (value) {
+                  _searchQuery = value;
+                  // Start a new search immediately on change
+                  _fetchEmployees(reset: true);
+                },
               ),
-              onChanged: (value) {
-                _searchQuery = value;
-                // Start a new search immediately on change
-                _fetchEmployees(reset: true);
-              },
             ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _errorMessage != null
-                    ? _buildErrorView()
-                    : _employees.isEmpty
-                        ? _buildEmptyView()
-                        : _buildEmployeeList(),
-          ),
-        ],
+            Expanded(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                      ? _buildErrorView()
+                      : _employees.isEmpty
+                          ? _buildEmptyView()
+                          : _buildEmployeeList(),
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
@@ -212,11 +215,12 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
   }
 
   Widget _buildEmployeeList() {
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     return RefreshIndicator(
       onRefresh: () => _fetchEmployees(reset: true),
       child: ListView.builder(
         controller: _scrollController,
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.fromLTRB(16, 16, 16, 96 + bottomInset),
         itemCount: _employees.length + (_hasMore ? 1 : 0),
         itemBuilder: (context, index) {
           if (index >= _employees.length) {
