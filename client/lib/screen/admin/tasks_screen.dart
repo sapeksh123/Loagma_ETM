@@ -9,8 +9,10 @@ import 'create_task_screen.dart';
 class TasksScreen extends StatefulWidget {
   final String userId;
   final String userRole;
+
   /// For admin: 'self' or 'employee'. Ignored for non-admin.
   final String initialViewMode;
+
   /// When true (from dashboard cards), hide the internal self/employee switch
   /// and lock the view to [initialViewMode].
   final bool lockViewMode;
@@ -51,19 +53,19 @@ class _TasksScreenState extends State<TasksScreen> {
       'id': 'pending',
       'label': 'Reminder: pending task',
       'message':
-          'Reminder: This task is still pending. Please review and update the status.'
+          'Reminder: This task is still pending. Please review and update the status.',
     },
     {
       'id': 'deadline',
       'label': 'Update: deadline approaching',
       'message':
-          'Update: The deadline for this task is approaching. Please prioritize and complete it as soon as possible.'
+          'Update: The deadline for this task is approaching. Please prioritize and complete it as soon as possible.',
     },
     {
       'id': 'details_changed',
       'label': 'Update: task details changed',
       'message':
-          'Update: Some details for this task have changed. Please open the task and review the latest information.'
+          'Update: Some details for this task have changed. Please open the task and review the latest information.',
     },
   ];
 
@@ -108,8 +110,7 @@ class _TasksScreenState extends State<TasksScreen> {
     super.initState();
     // Default to self-view; employees don't see extra options.
     // Manager roles can override via initialViewMode (from dashboard cards).
-    if (_isManagerRole &&
-        widget.initialViewMode.toLowerCase() == 'employee') {
+    if (_isManagerRole && widget.initialViewMode.toLowerCase() == 'employee') {
       _viewMode = 'employee';
     } else {
       _viewMode = 'self';
@@ -124,9 +125,7 @@ class _TasksScreenState extends State<TasksScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-      ),
+      decoration: const BoxDecoration(color: Colors.white),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -192,9 +191,7 @@ class _TasksScreenState extends State<TasksScreen> {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-      ),
+      decoration: const BoxDecoration(color: Colors.white),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -223,10 +220,11 @@ class _TasksScreenState extends State<TasksScreen> {
       decoration: InputDecoration(
         hintText: 'Search by name or role',
         prefixIcon: const Icon(Icons.search, size: 22),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
         ),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         filled: true,
         fillColor: Colors.grey.shade50,
       ),
@@ -337,10 +335,7 @@ class _TasksScreenState extends State<TasksScreen> {
         borderRadius: BorderRadius.circular(20),
         child: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: bg,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
           child: Icon(icon, size: 18, color: fg),
         ),
       ),
@@ -355,31 +350,25 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Future<void> _launchWhatsApp(String phone) async {
-  String normalized = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    String normalized = phone.replaceAll(RegExp(r'[^0-9+]'), '');
 
-  if (normalized.isEmpty) return;
+    if (normalized.isEmpty) return;
 
-  // Add India country code if missing
-  if (!normalized.startsWith('+') && normalized.length == 10) {
-    normalized = '91$normalized';
+    // Add India country code if missing
+    if (!normalized.startsWith('+') && normalized.length == 10) {
+      normalized = '91$normalized';
+    }
+
+    final Uri whatsappUri = Uri.parse("whatsapp://send?phone=$normalized");
+
+    try {
+      await launchUrl(whatsappUri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      final Uri webUri = Uri.parse("https://wa.me/$normalized");
+
+      await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    }
   }
-
-  final Uri whatsappUri = Uri.parse("whatsapp://send?phone=$normalized");
-
-  try {
-    await launchUrl(
-      whatsappUri,
-      mode: LaunchMode.externalApplication,
-    );
-  } catch (e) {
-    final Uri webUri = Uri.parse("https://wa.me/$normalized");
-
-    await launchUrl(
-      webUri,
-      mode: LaunchMode.externalApplication,
-    );
-  }
-}
 
   Widget _buildModeButton({
     required String label,
@@ -394,10 +383,7 @@ class _TasksScreenState extends State<TasksScreen> {
         decoration: BoxDecoration(
           color: isSelected ? const Color(0xFFceb56e) : Colors.white,
           borderRadius: BorderRadius.circular(30),
-          border: Border.all(
-            color: const Color(0xFFceb56e),
-            width: 1.2,
-          ),
+          border: Border.all(color: const Color(0xFFceb56e), width: 1.2),
         ),
         alignment: Alignment.center,
         child: Text(
@@ -462,7 +448,10 @@ class _TasksScreenState extends State<TasksScreen> {
               },
               borderRadius: BorderRadius.circular(12),
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.grey.shade200),
@@ -478,7 +467,9 @@ class _TasksScreenState extends State<TasksScreen> {
                   children: [
                     CircleAvatar(
                       radius: 22,
-                      backgroundColor: const Color(0xFFceb56e).withValues(alpha: 0.2),
+                      backgroundColor: const Color(
+                        0xFFceb56e,
+                      ).withValues(alpha: 0.2),
                       child: Text(
                         name.isNotEmpty ? name[0].toUpperCase() : '?',
                         style: const TextStyle(
@@ -514,7 +505,11 @@ class _TasksScreenState extends State<TasksScreen> {
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: Colors.grey.shade400, size: 22),
+                    Icon(
+                      Icons.chevron_right,
+                      color: Colors.grey.shade400,
+                      size: 22,
+                    ),
                   ],
                 ),
               ),
@@ -549,10 +544,7 @@ class _TasksScreenState extends State<TasksScreen> {
         userRole = 'employee';
       }
 
-      final response = await TaskService.getTasks(
-        userId,
-        userRole,
-      );
+      final response = await TaskService.getTasks(userId, userRole);
 
       if (response['status'] == 'success') {
         final List<dynamic> tasksData = response['data'] ?? [];
@@ -562,9 +554,11 @@ class _TasksScreenState extends State<TasksScreen> {
         // created_by == manager AND assigned_to == manager.
         if (_isManagerRole && _viewMode == 'self') {
           tasks = tasks
-              .where((task) =>
-                  task.createdBy == widget.userId &&
-                  task.assignedTo == widget.userId)
+              .where(
+                (task) =>
+                    task.createdBy == widget.userId &&
+                    task.assignedTo == widget.userId,
+              )
               .toList();
         }
 
@@ -573,8 +567,8 @@ class _TasksScreenState extends State<TasksScreen> {
           _isLoading = false;
         });
       } else {
-        final message =
-            (response['message'] ?? 'Failed to load tasks').toString();
+        final message = (response['message'] ?? 'Failed to load tasks')
+            .toString();
         setState(() {
           _errorMessage = message;
           _isLoading = false;
@@ -594,8 +588,7 @@ class _TasksScreenState extends State<TasksScreen> {
         }
       }
     } catch (e) {
-      String message =
-          e.toString().replaceFirst('Exception: ', '').trim();
+      String message = e.toString().replaceFirst('Exception: ', '').trim();
 
       if (message.contains('Connection refused') ||
           message.contains('Failed host lookup')) {
@@ -702,7 +695,8 @@ class _TasksScreenState extends State<TasksScreen> {
 
   List<Task> get _filteredTasks {
     var list = _tasks;
-    if (_selectedFilter != 'all') {
+    final selfCategoryOnly = _isManagerRole && _viewMode == 'self';
+    if (!selfCategoryOnly && _selectedFilter != 'all') {
       list = list.where((task) => task.status == _selectedFilter).toList();
     }
     if (_selectedCategory != 'all') {
@@ -772,7 +766,9 @@ class _TasksScreenState extends State<TasksScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', '').trim())),
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+        ),
       );
     }
   }
@@ -863,11 +859,16 @@ class _TasksScreenState extends State<TasksScreen> {
       barrierDismissible: false,
       builder: (ctx) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
-              const Icon(Icons.sticky_note_2_outlined,
-                  color: Colors.brown, size: 26),
+              const Icon(
+                Icons.sticky_note_2_outlined,
+                color: Colors.brown,
+                size: 26,
+              ),
               const SizedBox(width: 10),
               Text(title),
             ],
@@ -987,8 +988,12 @@ class _TasksScreenState extends State<TasksScreen> {
         itemBuilder: (context, index) {
           final entry = nonNullHistory[index];
           final color = _getStatusColor(entry.status);
-          final date = entry.date.length >= 10 ? entry.date.substring(8, 10) : '';
-          final month = entry.date.length >= 7 ? entry.date.substring(5, 7) : '';
+          final date = entry.date.length >= 10
+              ? entry.date.substring(8, 10)
+              : '';
+          final month = entry.date.length >= 7
+              ? entry.date.substring(5, 7)
+              : '';
           final label = '$date-$month';
           final hasNote = entry.note != null && entry.note!.isNotEmpty;
 
@@ -1009,10 +1014,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 // the status (e.g. green for completed) regardless of note.
                 color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: color,
-                  width: 1,
-                ),
+                border: Border.all(color: color, width: 1),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1027,11 +1029,7 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
                   if (hasNote) ...[
                     const SizedBox(width: 4),
-                    Icon(
-                      Icons.sticky_note_2_outlined,
-                      size: 12,
-                      color: color,
-                    ),
+                    Icon(Icons.sticky_note_2_outlined, size: 12, color: color),
                   ],
                 ],
               ),
@@ -1049,8 +1047,8 @@ class _TasksScreenState extends State<TasksScreen> {
     final map = task.subtaskHistory;
     List<DailyStatusEntry>? history =
         (map != null && map.containsKey(subtaskIndex))
-            ? map[subtaskIndex]
-            : null;
+        ? map[subtaskIndex]
+        : null;
     if ((history == null || history.isEmpty) && task.category == 'daily') {
       history = _buildDefaultDailyHistory();
     }
@@ -1066,8 +1064,12 @@ class _TasksScreenState extends State<TasksScreen> {
         itemBuilder: (context, index) {
           final entry = nonNullHistory[index];
           final color = _getStatusColor(entry.status);
-          final date = entry.date.length >= 10 ? entry.date.substring(8, 10) : '';
-          final month = entry.date.length >= 7 ? entry.date.substring(5, 7) : '';
+          final date = entry.date.length >= 10
+              ? entry.date.substring(8, 10)
+              : '';
+          final month = entry.date.length >= 7
+              ? entry.date.substring(5, 7)
+              : '';
           final label = '$date-$month';
           final hasNote = entry.note != null && entry.note!.isNotEmpty;
 
@@ -1088,10 +1090,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 // the status (e.g. green for completed) regardless of note.
                 color: color.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                  color: color,
-                  width: 1,
-                ),
+                border: Border.all(color: color, width: 1),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1106,11 +1105,7 @@ class _TasksScreenState extends State<TasksScreen> {
                   ),
                   if (hasNote) ...[
                     const SizedBox(width: 3),
-                    Icon(
-                      Icons.circle,
-                      size: 8,
-                      color: color,
-                    ),
+                    Icon(Icons.circle, size: 8, color: color),
                   ],
                 ],
               ),
@@ -1133,7 +1128,9 @@ class _TasksScreenState extends State<TasksScreen> {
       context: context,
       builder: (ctx) {
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
               Icon(Icons.history, color: color, size: 22),
@@ -1147,7 +1144,11 @@ class _TasksScreenState extends State<TasksScreen> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.calendar_today, size: 14, color: Colors.grey.shade700),
+                  Icon(
+                    Icons.calendar_today,
+                    size: 14,
+                    color: Colors.grey.shade700,
+                  ),
                   const SizedBox(width: 4),
                   Text(
                     dateLabel,
@@ -1187,10 +1188,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 const SizedBox(height: 4),
                 Text(
                   note,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade800,
-                  ),
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade800),
                 ),
               ],
             ],
@@ -1217,18 +1215,23 @@ class _TasksScreenState extends State<TasksScreen> {
               widget.lockViewMode
                   ? _buildLockedAdminHeader()
                   : _buildAdminModeSelector(),
-            if (!(_isManagerRole && _viewMode == 'employee' && _selectedEmployeeId == null))
+            if (!(_isManagerRole &&
+                _viewMode == 'employee' &&
+                _selectedEmployeeId == null))
               _buildFilterChips(),
             Expanded(
-              child: _isManagerRole && _viewMode == 'employee' && _selectedEmployeeId == null
+              child:
+                  _isManagerRole &&
+                      _viewMode == 'employee' &&
+                      _selectedEmployeeId == null
                   ? _buildEmployeeListContent()
                   : _isLoading
-                      ? const Center(child: CircularProgressIndicator())
-                      : _errorMessage != null
-                          ? _buildErrorView()
-                          : _filteredTasks.isEmpty
-                              ? _buildEmptyView()
-                              : _buildTaskList(),
+                  ? const Center(child: CircularProgressIndicator())
+                  : _errorMessage != null
+                  ? _buildErrorView()
+                  : _filteredTasks.isEmpty
+                  ? _buildEmptyView()
+                  : _buildTaskList(),
             ),
           ],
         ),
@@ -1237,7 +1240,8 @@ class _TasksScreenState extends State<TasksScreen> {
         onPressed: () async {
           // When admin is in "Employee Tasks" view, require an employee selection
           if (widget.userRole == 'admin' && _viewMode == 'employee') {
-            final noEmployeeSelected = _selectedEmployeeId == null ||
+            final noEmployeeSelected =
+                _selectedEmployeeId == null ||
                 _selectedEmployeeId!.trim().isEmpty;
             if (noEmployeeSelected) {
               ScaffoldMessenger.of(context).showSnackBar(
@@ -1302,17 +1306,52 @@ class _TasksScreenState extends State<TasksScreen> {
       final mm = date.month.toString().padLeft(2, '0');
       final dd = date.day.toString().padLeft(2, '0');
       days.add(
-        DailyStatusEntry(
-          date: '$yyyy-$mm-$dd',
-          status: 'assigned',
-          note: null,
-        ),
+        DailyStatusEntry(date: '$yyyy-$mm-$dd', status: 'assigned', note: null),
       );
     }
     return days;
   }
 
   Widget _buildFilterChips() {
+    if (_isManagerRole && _viewMode == 'self') {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildCategoryChip('All', 'all'),
+              const SizedBox(width: 8),
+              _buildCategoryChip('Daily', 'daily'),
+              const SizedBox(width: 8),
+              _buildCategoryChip('Project', 'project'),
+              const SizedBox(width: 8),
+              _buildCategoryChip('Monthly', 'monthly'),
+              const SizedBox(width: 8),
+              _buildCategoryChip('Quarterly', 'quarterly'),
+              const SizedBox(width: 8),
+              _buildCategoryChip('Yearly', 'yearly'),
+              const SizedBox(width: 8),
+              _buildCategoryChip('Personal', 'personal'),
+              const SizedBox(width: 8),
+              _buildCategoryChip('Other', 'other'),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -1415,13 +1454,13 @@ class _TasksScreenState extends State<TasksScreen> {
                     const SizedBox(width: 8),
                     _buildCategoryChip('Project', 'project'),
                     const SizedBox(width: 8),
-                    _buildCategoryChip('Personal', 'personal'),
-                    const SizedBox(width: 8),
                     _buildCategoryChip('Monthly', 'monthly'),
                     const SizedBox(width: 8),
                     _buildCategoryChip('Quarterly', 'quarterly'),
                     const SizedBox(width: 8),
                     _buildCategoryChip('Yearly', 'yearly'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Personal', 'personal'),
                     const SizedBox(width: 8),
                     _buildCategoryChip('Other', 'other'),
                   ],
@@ -1557,8 +1596,9 @@ class _TasksScreenState extends State<TasksScreen> {
     final bool isAdminEmployeeView =
         widget.userRole == 'admin' && _viewMode == 'employee';
 
-    final String title =
-        isAdminEmployeeView ? 'Select Employee' : 'No Tasks Found';
+    final String title = isAdminEmployeeView
+        ? 'Select Employee'
+        : 'No Tasks Found';
     final String subtitle = isAdminEmployeeView
         ? 'Choose an employee to view their tasks.'
         : 'Create your first task to get started';
@@ -1567,11 +1607,7 @@ class _TasksScreenState extends State<TasksScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.task_outlined,
-            size: 80,
-            color: Colors.grey.shade400,
-          ),
+          Icon(Icons.task_outlined, size: 80, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
             title,
@@ -1584,10 +1620,7 @@ class _TasksScreenState extends State<TasksScreen> {
           const SizedBox(height: 8),
           Text(
             subtitle,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.grey.shade500,
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
             textAlign: TextAlign.center,
           ),
         ],
@@ -1830,162 +1863,162 @@ class _TasksScreenState extends State<TasksScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  ...task.subtasksWithStatus.asMap().entries.map(
-                    (entry) {
-                      final idx = entry.key;
-                      final st = entry.value;
-                      final color = _getSubtaskStatusColor(st.status);
-                      final showSubtaskHelp = st.needHelpNote != null &&
-                          st.needHelpNote!.isNotEmpty;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    st.text,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.grey.shade800,
-                                      decoration: st.status == 'completed'
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
+                  ...task.subtasksWithStatus.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final st = entry.value;
+                    final color = _getSubtaskStatusColor(st.status);
+                    final showSubtaskHelp =
+                        st.needHelpNote != null && st.needHelpNote!.isNotEmpty;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  st.text,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade800,
+                                    decoration: st.status == 'completed'
+                                        ? TextDecoration.lineThrough
+                                        : null,
                                   ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                const SizedBox(width: 6),
-                                if (_isManagerRole &&
-                                    _viewMode == 'employee') ...[
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.help_outline,
-                                      size: 18,
-                                      color: Color(0xFF9E9E9E),
-                                    ),
-                                    tooltip:
-                                        'Send reminder for this subtask to employee',
-                                    onPressed: () {
-                                      _showTaskReminderDialog(
-                                        task: task,
-                                        subtaskIndex: idx,
-                                      );
-                                    },
+                              ),
+                              const SizedBox(width: 6),
+                              if (_isManagerRole &&
+                                  _viewMode == 'employee') ...[
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.help_outline,
+                                    size: 18,
+                                    color: Color(0xFF9E9E9E),
                                   ),
-                                  const SizedBox(width: 2),
-                                ],
-                                Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: _canChangeTaskStatus(task)
-                                        ? () => _showSubtaskStatusPicker(
-                                              context: context,
-                                              currentStatus: st.status,
-                                              onSelected: (s) async {
-                                                final note =
-                                                    await _showNeedHelpNoteDialog(
+                                  tooltip:
+                                      'Send reminder for this subtask to employee',
+                                  onPressed: () {
+                                    _showTaskReminderDialog(
+                                      task: task,
+                                      subtaskIndex: idx,
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 2),
+                              ],
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: _canChangeTaskStatus(task)
+                                      ? () => _showSubtaskStatusPicker(
+                                          context: context,
+                                          currentStatus: st.status,
+                                          onSelected: (s) async {
+                                            final note =
+                                                await _showNeedHelpNoteDialog(
                                                   title: 'Status Note',
                                                   hint:
                                                       'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
                                                   allowEmpty: true,
                                                 );
-                                                await _updateSubtaskStatus(
-                                                  task,
-                                                  idx,
-                                                  s,
-                                                  statusNote: note,
-                                                );
-                                              },
-                                            )
-                                        : null,
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: color.withValues(alpha: 0.15),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: color, width: 1.5),
-                                      ),
-                                      child: Icon(
-                                        Icons.flag,
-                                        size: 16,
-                                        color: _canChangeTaskStatus(task)
-                                            ? color
-                                            : color.withValues(alpha: 0.5),
+                                            await _updateSubtaskStatus(
+                                              task,
+                                              idx,
+                                              s,
+                                              statusNote: note,
+                                            );
+                                          },
+                                        )
+                                      : null,
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: color.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: color,
+                                        width: 1.5,
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (showSubtaskHelp) ...[
-                              const SizedBox(height: 6),
-                              Padding(
-                                padding: const EdgeInsets.only(left: 8),
-                                child: Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                        color: color, width: 1.5),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Icon(
-                                            Icons.sticky_note_2_outlined,
-                                            size: 16,
-                                            color: color,
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            'Status note',
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w600,
-                                              color: color,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        st.needHelpNote!,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: color,
-                                          height: 1.3,
-                                        ),
-                                        maxLines: 5,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
+                                    child: Icon(
+                                      Icons.flag,
+                                      size: 16,
+                                      color: _canChangeTaskStatus(task)
+                                          ? color
+                                          : color.withValues(alpha: 0.5),
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
-                            if (task.category == 'daily') ...[
-                              const SizedBox(height: 4),
-                              _buildSubtaskHistoryStrip(task, idx),
-                            ],
+                          ),
+                          if (showSubtaskHelp) ...[
+                            const SizedBox(height: 6),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: color, width: 1.5),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.sticky_note_2_outlined,
+                                          size: 16,
+                                          color: color,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Status note',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: color,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      st.needHelpNote!,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: color,
+                                        height: 1.3,
+                                      ),
+                                      maxLines: 5,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ],
-                        ),
-                      );
-                    },
-                  ),
+                          if (task.category == 'daily') ...[
+                            const SizedBox(height: 4),
+                            _buildSubtaskHistoryStrip(task, idx),
+                          ],
+                        ],
+                      ),
+                    );
+                  }),
                 ],
                 const SizedBox(height: 10),
                 Row(
@@ -2002,11 +2035,7 @@ class _TasksScreenState extends State<TasksScreen> {
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(
-                            Icons.circle,
-                            size: 8,
-                            color: statusColor,
-                          ),
+                          Icon(Icons.circle, size: 8, color: statusColor),
                           const SizedBox(width: 6),
                           Text(
                             task.status.replaceAll('_', ' ').toUpperCase(),
@@ -2074,7 +2103,9 @@ class _TasksScreenState extends State<TasksScreen> {
                     return Row(
                       children: [
                         Icon(
-                          isSelfTask ? Icons.person : Icons.admin_panel_settings,
+                          isSelfTask
+                              ? Icons.person
+                              : Icons.admin_panel_settings,
                           size: 14,
                           color: Colors.grey.shade500,
                         ),
@@ -2101,13 +2132,15 @@ class _TasksScreenState extends State<TasksScreen> {
 
   Future<void> _openAdminTaskEdit(Task task) async {
     final titleController = TextEditingController(text: task.title);
-    final descriptionController =
-        TextEditingController(text: task.descriptionOnly ?? '');
+    final descriptionController = TextEditingController(
+      text: task.descriptionOnly ?? '',
+    );
     String taskStatus = task.status;
     String priority = task.priority;
     String category = task.category;
-    DateTime? deadlineDate =
-        task.deadlineDate != null ? DateTime.tryParse(task.deadlineDate!) : null;
+    DateTime? deadlineDate = task.deadlineDate != null
+        ? DateTime.tryParse(task.deadlineDate!)
+        : null;
     TimeOfDay? deadlineTime = task.deadlineTime != null
         ? TimeOfDay(
             hour: int.tryParse(task.deadlineTime!.split(':')[0]) ?? 0,
@@ -2180,7 +2213,9 @@ class _TasksScreenState extends State<TasksScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -2201,7 +2236,9 @@ class _TasksScreenState extends State<TasksScreen> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                         contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 12),
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -2224,8 +2261,7 @@ class _TasksScreenState extends State<TasksScreen> {
                             s.replaceAll('_', ' '),
                             style: TextStyle(
                               fontSize: 12,
-                              color:
-                                  selected ? color : Colors.grey.shade700,
+                              color: selected ? color : Colors.grey.shade700,
                             ),
                           ),
                           selected: selected,
@@ -2266,17 +2302,13 @@ class _TasksScreenState extends State<TasksScreen> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: ['low', 'medium', 'high', 'critical']
-                          .map((p) {
+                      children: ['low', 'medium', 'high', 'critical'].map((p) {
                         final selected = priority == p;
                         final color = _getPriorityColor(p);
                         return ChoiceChip(
-                          label: Text(
-                            p[0].toUpperCase() + p.substring(1),
-                          ),
+                          label: Text(p[0].toUpperCase() + p.substring(1)),
                           selected: selected,
-                          onSelected: (_) =>
-                              setModalState(() => priority = p),
+                          onSelected: (_) => setModalState(() => priority = p),
                           selectedColor: color.withValues(alpha: 0.2),
                           backgroundColor: Colors.grey.shade100,
                         );
@@ -2294,32 +2326,34 @@ class _TasksScreenState extends State<TasksScreen> {
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
-                      children: const [
-                        'daily',
-                        'project',
-                        'personal',
-                        'monthly',
-                        'quarterly',
-                        'yearly',
-                        'other',
-                      ].map((c) {
-                        return Builder(
-                          builder: (context) {
-                            final selected = category == c;
-                            return ChoiceChip(
-                              label: Text(
-                                  c[0].toUpperCase() + c.substring(1)),
-                              selected: selected,
-                              onSelected: (_) =>
-                                  setModalState(() => category = c),
-                              selectedColor:
-                                  const Color(0xFFceb56e).withValues(
-                                      alpha: 0.2),
-                              backgroundColor: Colors.grey.shade100,
+                      children:
+                          const [
+                            'daily',
+                            'project',
+                            'monthly',
+                            'quarterly',
+                            'yearly',
+                            'personal',
+                            'other',
+                          ].map((c) {
+                            return Builder(
+                              builder: (context) {
+                                final selected = category == c;
+                                return ChoiceChip(
+                                  label: Text(
+                                    c[0].toUpperCase() + c.substring(1),
+                                  ),
+                                  selected: selected,
+                                  onSelected: (_) =>
+                                      setModalState(() => category = c),
+                                  selectedColor: const Color(
+                                    0xFFceb56e,
+                                  ).withValues(alpha: 0.2),
+                                  backgroundColor: Colors.grey.shade100,
+                                );
+                              },
                             );
-                          },
-                        );
-                      }).toList(),
+                          }).toList(),
                     ),
                     const SizedBox(height: 16),
                     const Text(
@@ -2337,8 +2371,7 @@ class _TasksScreenState extends State<TasksScreen> {
                             onPressed: () async {
                               final picked = await showDatePicker(
                                 context: context,
-                                initialDate:
-                                    deadlineDate ?? DateTime.now(),
+                                initialDate: deadlineDate ?? DateTime.now(),
                                 firstDate: DateTime(2020),
                                 lastDate: DateTime(2100),
                               );
@@ -2346,8 +2379,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                 setModalState(() => deadlineDate = picked);
                               }
                             },
-                            icon:
-                                const Icon(Icons.calendar_today, size: 18),
+                            icon: const Icon(Icons.calendar_today, size: 18),
                             label: Text(
                               deadlineDate != null
                                   ? '${deadlineDate!.day}/${deadlineDate!.month}/${deadlineDate!.year}'
@@ -2361,15 +2393,13 @@ class _TasksScreenState extends State<TasksScreen> {
                             onPressed: () async {
                               final picked = await showTimePicker(
                                 context: context,
-                                initialTime: deadlineTime ??
-                                    TimeOfDay.now(),
+                                initialTime: deadlineTime ?? TimeOfDay.now(),
                               );
                               if (picked != null) {
                                 setModalState(() => deadlineTime = picked);
                               }
                             },
-                            icon:
-                                const Icon(Icons.access_time, size: 18),
+                            icon: const Icon(Icons.access_time, size: 18),
                             label: Text(
                               deadlineTime != null
                                   ? '${deadlineTime!.hour}:${deadlineTime!.minute.toString().padLeft(2, '0')}'
@@ -2389,8 +2419,8 @@ class _TasksScreenState extends State<TasksScreen> {
                             'title': titleController.text.trim(),
                             'description':
                                 descriptionController.text.trim().isEmpty
-                                    ? null
-                                    : descriptionController.text.trim(),
+                                ? null
+                                : descriptionController.text.trim(),
                             'status': taskStatus,
                             'priority': priority,
                             'category': category,
@@ -2406,8 +2436,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                 '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
                           }
                           try {
-                            await TaskService.updateTask(
-                                task.id, updatedData);
+                            await TaskService.updateTask(task.id, updatedData);
                             if (!mounted) return;
                             Navigator.pop(ctx);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -2432,9 +2461,7 @@ class _TasksScreenState extends State<TasksScreen> {
                         },
                         child: const Text(
                           'Save',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold),
                         ),
                       ),
                     ),
@@ -2449,11 +2476,13 @@ class _TasksScreenState extends State<TasksScreen> {
   }
 
   Future<void> _deleteTask(Task task) async {
-    final confirmed = await showDialog<bool>(
+    final confirmed =
+        await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             title: const Text('Delete task?'),
             content: const Text(
               'This will permanently delete the task and its subtasks.',
@@ -2479,17 +2508,15 @@ class _TasksScreenState extends State<TasksScreen> {
     try {
       await TaskService.deleteTask(task.id);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Task deleted')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Task deleted')));
       _fetchTasks();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            e.toString().replaceFirst('Exception: ', '').trim(),
-          ),
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
         ),
       );
     }
@@ -2547,171 +2574,159 @@ class _TasksScreenState extends State<TasksScreen> {
                   task.category[0].toUpperCase() +
                       task.category.substring(1) +
                       ' task',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
                 if (task.descriptionOnly != null &&
                     task.descriptionOnly!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   const Text(
                     'Description',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     task.descriptionOnly!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey.shade700,
-                    ),
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
                   ),
                 ],
                 if (task.subtasksWithStatus.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   const Text(
                     'Subtasks',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 6),
-                  ...task.subtasksWithStatus.asMap().entries.map(
-                    (entry) {
-                      final idx = entry.key;
-                      final st = entry.value;
-                      final color = _getSubtaskStatusColor(st.status);
-                      final showSubtaskHelp =
-                          st.needHelpNote != null &&
-                              st.needHelpNote!.isNotEmpty;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    st.text,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.black87,
-                                      decoration: st.status == 'completed'
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                    ),
+                  ...task.subtasksWithStatus.asMap().entries.map((entry) {
+                    final idx = entry.key;
+                    final st = entry.value;
+                    final color = _getSubtaskStatusColor(st.status);
+                    final showSubtaskHelp =
+                        st.needHelpNote != null && st.needHelpNote!.isNotEmpty;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  st.text,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.black87,
+                                    decoration: st.status == 'completed'
+                                        ? TextDecoration.lineThrough
+                                        : null,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Material(
-                                  color: Colors.transparent,
-                                  child: InkWell(
-                                    onTap: _canChangeTaskStatus(task)
-                                        ? () => _showSubtaskStatusPicker(
-                                              context: ctx,
-                                              currentStatus: st.status,
-                                              onSelected: (s) async {
-                                                final note =
-                                                    await _showNeedHelpNoteDialog(
+                              ),
+                              const SizedBox(width: 8),
+                              Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: _canChangeTaskStatus(task)
+                                      ? () => _showSubtaskStatusPicker(
+                                          context: ctx,
+                                          currentStatus: st.status,
+                                          onSelected: (s) async {
+                                            final note =
+                                                await _showNeedHelpNoteDialog(
                                                   title: 'Status Note',
                                                   hint:
                                                       'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
                                                   allowEmpty: true,
                                                 );
-                                                await _updateSubtaskStatus(
-                                                  task,
-                                                  idx,
-                                                  s,
-                                                  statusNote: note,
-                                                );
-                                              },
-                                            )
-                                        : null,
-                                    borderRadius: BorderRadius.circular(20),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: color.withValues(alpha: 0.15),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: color, width: 1.5),
-                                      ),
-                                      child: Icon(
-                                        Icons.flag,
-                                        size: 16,
-                                        color: _canChangeTaskStatus(task)
-                                            ? color
-                                            : color.withValues(alpha: 0.5),
+                                            await _updateSubtaskStatus(
+                                              task,
+                                              idx,
+                                              s,
+                                              statusNote: note,
+                                            );
+                                          },
+                                        )
+                                      : null,
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: Container(
+                                    padding: const EdgeInsets.all(6),
+                                    decoration: BoxDecoration(
+                                      color: color.withValues(alpha: 0.15),
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color: color,
+                                        width: 1.5,
                                       ),
                                     ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (showSubtaskHelp) ...[
-                              const SizedBox(height: 4),
-                              Padding(
-                                padding: const EdgeInsets.only(left: 8),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(color: color),
-                                  ),
-                                  child: Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Icon(
-                                        Icons.sticky_note_2_outlined,
-                                        size: 14,
-                                        color: color,
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'Status note',
-                                              style: TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w600,
-                                                color: color,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              st.needHelpNote!,
-                                              style: TextStyle(
-                                                fontSize: 12,
-                                                color: color,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
+                                    child: Icon(
+                                      Icons.flag,
+                                      size: 16,
+                                      color: _canChangeTaskStatus(task)
+                                          ? color
+                                          : color.withValues(alpha: 0.5),
+                                    ),
                                   ),
                                 ),
                               ),
                             ],
+                          ),
+                          if (showSubtaskHelp) ...[
+                            const SizedBox(height: 4),
+                            Padding(
+                              padding: const EdgeInsets.only(left: 8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: color),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Icon(
+                                      Icons.sticky_note_2_outlined,
+                                      size: 14,
+                                      color: color,
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Status note',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w600,
+                                              color: color,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            st.needHelpNote!,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: color,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ],
-                        ),
-                      );
-                    },
-                  ),
+                        ],
+                      ),
+                    );
+                  }),
                 ],
                 const SizedBox(height: 12),
                 Wrap(
@@ -2773,10 +2788,7 @@ class _TasksScreenState extends State<TasksScreen> {
                         children: const [
                           Icon(Icons.person_pin_circle_outlined, size: 14),
                           SizedBox(width: 4),
-                          Text(
-                            'Self task',
-                            style: TextStyle(fontSize: 12),
-                          ),
+                          Text('Self task', style: TextStyle(fontSize: 12)),
                         ],
                       ),
                   ],
@@ -2816,10 +2828,7 @@ class _TasksScreenState extends State<TasksScreen> {
                         const SizedBox(height: 4),
                         Text(
                           task.needHelpNote!,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: statusColor,
-                          ),
+                          style: TextStyle(fontSize: 13, color: statusColor),
                         ),
                       ],
                     ),
@@ -2874,9 +2883,7 @@ class _TasksScreenState extends State<TasksScreen> {
     if (_selectedEmployeeId == null || _selectedEmployeeId!.trim().isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select an employee first'),
-        ),
+        const SnackBar(content: Text('Please select an employee first')),
       );
       return;
     }
@@ -2931,10 +2938,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 const SizedBox(height: 12),
                 const Text(
                   'Preset message',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 6),
                 Column(
@@ -2951,8 +2955,9 @@ class _TasksScreenState extends State<TasksScreen> {
                         label,
                         style: TextStyle(
                           fontSize: 13,
-                          fontWeight:
-                              isSelected ? FontWeight.w600 : FontWeight.w400,
+                          fontWeight: isSelected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
                         ),
                       ),
                       onChanged: (value) {
@@ -2971,10 +2976,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 const SizedBox(height: 8),
                 const Text(
                   'Additional message (optional)',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 TextField(
@@ -3009,16 +3011,41 @@ class _TasksScreenState extends State<TasksScreen> {
 
     if (result != true || !mounted) return;
 
-    final preset = _presetMessages
-        .firstWhere((p) => p['id'] == selectedPresetId, orElse: () {
-      return _presetMessages.first;
-    });
+    final preset = _presetMessages.firstWhere(
+      (p) => p['id'] == selectedPresetId,
+      orElse: () {
+        return _presetMessages.first;
+      },
+    );
     final baseMessage = preset['message'] ?? '';
     final extra = customController.text.trim();
-    final fullMessage =
-        extra.isEmpty ? baseMessage : '$baseMessage\n\nNote: $extra';
+    final fullMessage = extra.isEmpty
+        ? baseMessage
+        : '$baseMessage\n\nNote: $extra';
 
+    BuildContext? loaderContext;
     try {
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (loaderCtx) {
+          loaderContext = loaderCtx;
+          return const AlertDialog(
+            content: Row(
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 12),
+                Expanded(child: Text('Sending reminder...')),
+              ],
+            ),
+          );
+        },
+      );
+
       await NotificationService.sendTaskReminder(
         senderRole: senderRole,
         employeeId: employeeId,
@@ -3028,20 +3055,24 @@ class _TasksScreenState extends State<TasksScreen> {
         message: fullMessage,
       );
       if (!mounted) return;
+      if (loaderContext != null) {
+        Navigator.of(loaderContext!).pop();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Reminder sent to employee'),
-        ),
+        const SnackBar(content: Text('Reminder sent to employee')),
       );
     } catch (e) {
       if (!mounted) return;
+      if (loaderContext != null) {
+        Navigator.of(loaderContext!).pop();
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            e.toString().replaceFirst('Exception: ', '').trim(),
-          ),
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
         ),
       );
+    } finally {
+      customController.dispose();
     }
   }
 }
@@ -3051,10 +3082,7 @@ class _EmployeeSelectSheet extends StatefulWidget {
   final List<Map<String, dynamic>> employees;
   final void Function(Map<String, dynamic>) onSelect;
 
-  const _EmployeeSelectSheet({
-    required this.employees,
-    required this.onSelect,
-  });
+  const _EmployeeSelectSheet({required this.employees, required this.onSelect});
 
   @override
   State<_EmployeeSelectSheet> createState() => _EmployeeSelectSheetState();
@@ -3123,10 +3151,7 @@ class _EmployeeSelectSheetState extends State<_EmployeeSelectSheet> {
                 padding: EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
                   'Choose Employee',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
               ),
               const SizedBox(height: 12),
@@ -3193,7 +3218,9 @@ class _EmployeeSelectSheetState extends State<_EmployeeSelectSheet> {
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.04),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.04,
+                                      ),
                                       blurRadius: 4,
                                       offset: const Offset(0, 1),
                                     ),
@@ -3203,9 +3230,13 @@ class _EmployeeSelectSheetState extends State<_EmployeeSelectSheet> {
                                   children: [
                                     CircleAvatar(
                                       radius: 22,
-                                      backgroundColor: const Color(0xFFceb56e).withValues(alpha: 0.2),
+                                      backgroundColor: const Color(
+                                        0xFFceb56e,
+                                      ).withValues(alpha: 0.2),
                                       child: Text(
-                                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                                        name.isNotEmpty
+                                            ? name[0].toUpperCase()
+                                            : '?',
                                         style: const TextStyle(
                                           fontSize: 18,
                                           fontWeight: FontWeight.w600,
@@ -3216,7 +3247,8 @@ class _EmployeeSelectSheetState extends State<_EmployeeSelectSheet> {
                                     const SizedBox(width: 14),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Text(

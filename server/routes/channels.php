@@ -10,6 +10,6 @@ Broadcast::channel('chat.thread.{threadId}', function ($user, string $threadId) 
         ->exists();
 });
 
-Broadcast::channel('presence.user.{userId}', function ($user, string $userId) {
+Broadcast::channel('chat.user.{userId}', function ($user, string $userId) {
     return (string) $user->id === $userId;
 });

@@ -40,6 +40,7 @@ Route::get('/db-test', function () {
 
 // User Routes
 Route::get('/users', [UserController::class, 'index']);
+Route::get('/users/by-contact/{contactNumber}', [UserController::class, 'showByContact']);
 Route::get('/roles', [RoleController::class, 'index']);
 Route::get('/departments', [DepartmentController::class, 'index']);
 
@@ -78,11 +79,13 @@ Route::patch('/notifications/{id}/read', [NotificationController::class, 'markRe
 
 // Chat Routes
 Route::middleware('chat.actor')->group(function () {
+    Route::post('/chat/realtime/auth', [ChatController::class, 'authorizeRealtime']);
     Route::get('/chat/threads', [ChatController::class, 'listThreads']);
     Route::post('/chat/threads/direct', [ChatController::class, 'openDirectThread']);
     Route::post('/chat/threads/broadcast', [ChatController::class, 'openBroadcastThread']);
     Route::get('/chat/threads/{id}/messages', [ChatController::class, 'listMessages']);
     Route::post('/chat/threads/{id}/messages', [ChatController::class, 'sendMessage']);
+    Route::post('/chat/threads/{id}/receipts', [ChatController::class, 'updateReceipts']);
     Route::post('/chat/threads/{id}/read', [ChatController::class, 'markThreadRead']);
     Route::post('/chat/threads/{id}/messages/{messageId}/delivered', [ChatController::class, 'markMessageDelivered']);
     Route::post('/chat/threads/{id}/messages/{messageId}/seen', [ChatController::class, 'markMessageSeen']);

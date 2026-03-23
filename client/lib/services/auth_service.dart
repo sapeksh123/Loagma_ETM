@@ -57,18 +57,36 @@ class AuthService {
       throw Exception('Invalid OTP');
     }
 
-    // Resolve the user and primary role from backend "users" table.
-    final response = await ApiService.get('/users');
-    if (response['status'] != 'success') {
-      throw Exception('Unable to fetch users from server');
+    dynamic match;
+
+    // First try dedicated backend lookup so pagination never blocks valid logins.
+    try {
+      final encodedPhone = Uri.encodeComponent(phone);
+      final response = await ApiService.get('/users/by-contact/$encodedPhone');
+      if (response['status'] == 'success' && response['data'] != null) {
+        match = response['data'];
+      }
+    } catch (_) {
+      // Fallback keeps compatibility with older backend versions.
     }
 
-    final List<dynamic> users = response['data'] ?? [];
+    if (match == null) {
+      final fallbackResponse = await ApiService.get(
+        '/users?search=$phone&per_page=50',
+      );
+      if (fallbackResponse['status'] != 'success') {
+        throw Exception('Unable to fetch users from server');
+      }
 
-    final dynamic match = users.firstWhere(
-      (u) => (u['contactNumber'] ?? '').toString() == phone,
-      orElse: () => null,
-    );
+      final List<dynamic> users = fallbackResponse['data'] ?? [];
+      final normalizedInput = normalizePhone(phone);
+
+      match = users.firstWhere(
+        (u) => normalizePhone((u['contactNumber'] ?? '').toString()) ==
+            normalizedInput,
+        orElse: () => null,
+      );
+    }
 
     if (match == null) {
       // User not found in DB, stop login.
@@ -93,6 +111,14 @@ class AuthService {
       role: appRole,
       email: match['email']?.toString(),
     );
+  }
+
+  static String normalizePhone(String value) {
+    final digitsOnly = value.replaceAll(RegExp(r'\D'), '');
+    if (digitsOnly.length >= 10) {
+      return digitsOnly.substring(digitsOnly.length - 10);
+    }
+    return digitsOnly;
   }
 
   static String mapRoleIdToAppRole(String? roleId) {

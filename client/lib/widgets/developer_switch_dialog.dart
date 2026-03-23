@@ -26,7 +26,6 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
   String? _error;
 
   List<User> _users = [];
-  String _selectedRole = 'employee';
 
   @override
   void initState() {
@@ -47,13 +46,11 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
     });
 
     try {
-      final storedUser = await AuthService.getStoredUser();
       final users = await AuthService.getSwitchableUsers();
 
       if (!mounted) return;
       setState(() {
         _users = users;
-        _selectedRole = AuthService.normalizeAppRole(storedUser?.role);
         _isLoading = false;
       });
     } catch (e) {
@@ -85,7 +82,7 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
     try {
       final switchedUser = await AuthService.switchSessionContext(
         selectedUser: selectedUser,
-        selectedRole: _selectedRole,
+        selectedRole: selectedUser.role,
       );
 
       if (!mounted) return;
@@ -102,6 +99,36 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
         });
       }
     }
+  }
+
+  Future<void> _confirmAndSwitch(User selectedUser) async {
+    if (_isSwitching) return;
+    final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            title: const Text('Switch account?'),
+            content: Text(
+              'Switch to ${selectedUser.name} (${selectedUser.id}) as ${_roleLabel(selectedUser.role)}?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: const Text('Switch'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!confirmed) return;
+    await _switchTo(selectedUser);
   }
 
   String _roleLabel(String role) {
@@ -142,28 +169,6 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Role context',
-                      style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: AuthService.appRoles.map((role) {
-                        final isSelected = _selectedRole == role;
-                        return ChoiceChip(
-                          label: Text(_roleLabel(role)),
-                          selected: isSelected,
-                          onSelected: (_) {
-                            setState(() {
-                              _selectedRole = role;
-                            });
-                          },
-                        );
-                      }).toList(),
-                    ),
-                    const SizedBox(height: 14),
                     TextField(
                       controller: _searchController,
                       onChanged: (_) => setState(() {}),
@@ -234,7 +239,7 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
                                       : const Icon(Icons.chevron_right),
                                   onTap: _isSwitching
                                       ? null
-                                      : () => _switchTo(user),
+                                      : () => _confirmAndSwitch(user),
                                 );
                               },
                             ),

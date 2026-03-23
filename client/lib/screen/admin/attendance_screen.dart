@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/attendance_service.dart';
 
@@ -135,6 +136,49 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final raw = end.difference(punchIn).inSeconds - breakSeconds;
     if (raw < 0) return 0;
     return raw;
+  }
+
+  String _sanitizePhone(String phone) {
+    return phone.replaceAll(RegExp(r'[^0-9+]'), '');
+  }
+
+  Future<void> _openWhatsApp(String phone) async {
+    final sanitized = _sanitizePhone(phone);
+    final digitsOnly = sanitized.replaceAll('+', '');
+    if (digitsOnly.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid phone number for WhatsApp')),
+      );
+      return;
+    }
+
+    final uri = Uri.parse('https://wa.me/$digitsOnly');
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open WhatsApp')),
+      );
+    }
+  }
+
+  Future<void> _makeCall(String phone) async {
+    final sanitized = _sanitizePhone(phone);
+    if (sanitized.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invalid phone number for call')),
+      );
+      return;
+    }
+
+    final uri = Uri(scheme: 'tel', path: sanitized);
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to start call')),
+      );
+    }
   }
 
   @override
@@ -370,6 +414,25 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       ],
                     ),
                   ),
+                  if (phone.isNotEmpty)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'WhatsApp',
+                          icon: const Icon(Icons.call, size: 20),
+                          color: const Color(0xFF25D366),
+                          onPressed: () => _openWhatsApp(phone),
+                        ),
+                        IconButton(
+                          tooltip: 'Call',
+                          icon: const Icon(Icons.call, size: 20),
+                          color: Colors.grey,
+                          onPressed: () => _makeCall(phone),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                    ),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,

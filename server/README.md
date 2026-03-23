@@ -57,3 +57,32 @@ If you discover a security vulnerability within Laravel, please send an e-mail t
 ## License
 
 The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+
+## Chat Deployment Checklist
+
+For the realtime chat module to work smoothly in production, verify all of the following:
+
+1. Run database migrations:
+   `php artisan migrate --force`
+2. Ensure the chat broadcasting driver is Reverb:
+   `BROADCAST_CONNECTION=reverb`
+3. Ensure cache and queue use Redis:
+   `CACHE_STORE=redis`
+   `QUEUE_CONNECTION=redis`
+4. Provide a real Redis service, not just `127.0.0.1`, unless Redis is actually running on the same machine:
+   `REDIS_URL=...` or `REDIS_HOST=...`
+5. Start the required long-running processes in production:
+   `php artisan queue:work`
+   `php artisan reverb:start --host=0.0.0.0 --port=8080`
+6. Make sure the public app URL and Reverb public host match the deployed domain:
+   `APP_URL=https://your-domain`
+   `REVERB_HOST=your-domain`
+   `REVERB_PORT=443`
+   `REVERB_SCHEME=https`
+7. If the runtime does not have the PHP Redis extension installed, install `predis/predis` and switch:
+   `REDIS_CLIENT=predis`
+8. Verify the new chat endpoints are reachable:
+   `POST /api/chat/realtime/auth`
+   `POST /api/chat/threads/{id}/receipts`
+   `GET /api/chat/threads/{id}/messages?before_sort_key=...`
+   `GET /api/chat/threads/{id}/messages?after_sort_key=...`

@@ -4,62 +4,39 @@ import 'dart:io' show SocketException;
 
 import 'package:http/http.dart' as http;
 
-import 'api_config.dart';
-import '../models/chat_thread_model.dart';
 import '../models/chat_message_model.dart';
+import '../models/chat_thread_model.dart';
 import '../models/chat_user_model.dart';
+import 'api_config.dart';
 
-class _MemoryCacheEntry<T> {
-  final T data;
-  final DateTime createdAt;
+class ChatMessagesPage {
+  final List<ChatMessage> messages;
+  final bool hasMoreBefore;
+  final int? firstSortKey;
+  final int? lastSortKey;
 
-  _MemoryCacheEntry(this.data) : createdAt = DateTime.now();
-
-  bool isFresh(Duration ttl) => DateTime.now().difference(createdAt) <= ttl;
+  const ChatMessagesPage({
+    required this.messages,
+    required this.hasMoreBefore,
+    this.firstSortKey,
+    this.lastSortKey,
+  });
 }
 
 class ChatService {
   static const Duration _requestTimeout = ApiConfig.chatRequestTimeout;
   static const Duration _sendMessageTimeout = ApiConfig.chatSendTimeout;
-  static const Duration _retryDelay = Duration(milliseconds: 700);
-  static const int _maxRequestAttempts = 2;
-  static const int _maxSendAttempts = 2;
-  static const Duration _threadsCacheTtl = Duration(seconds: 20);
-  static const Duration _usersCacheTtl = Duration(seconds: 60);
-
-  static final Map<String, _MemoryCacheEntry<List<ChatThread>>> _threadsCache =
-      {};
-  static final Map<String, _MemoryCacheEntry<List<ChatUser>>> _usersCache = {};
-
-  static List<ChatThread>? getCachedThreads({
-    required String userId,
-    required String role,
-  }) {
-    final key = '$userId|$role';
-    final cached = _threadsCache[key];
-    if (cached == null || !cached.isFresh(_threadsCacheTtl)) {
-      return null;
-    }
-    return cached.data;
-  }
-
-  static List<ChatUser>? getCachedUsers({
-    required String currentUserId,
-    int perPage = 100,
-  }) {
-    final key = '$currentUserId|$perPage';
-    final cached = _usersCache[key];
-    if (cached == null || !cached.isFresh(_usersCacheTtl)) {
-      return null;
-    }
-    return cached.data;
-  }
+  static const Duration _retryDelay = Duration(milliseconds: 400);
+  static const Duration _realtimeAuthTimeout = Duration(seconds: 10);
+  static const Duration _typingTimeout = Duration(seconds: 3);
+  static const Duration _receiptsTimeout = Duration(seconds: 4);
+  static const Duration _presenceTimeout = Duration(seconds: 4);
 
   static Future<http.Response> _performRequest({
     required Future<http.Response> Function() request,
     required String actionLabel,
     Duration timeout = _requestTimeout,
-    int attempts = _maxRequestAttempts,
+    int attempts = 2,
   }) async {
     Object? lastError;
 
@@ -68,31 +45,23 @@ class ChatService {
         return await request().timeout(timeout);
       } on TimeoutException catch (e) {
         lastError = e;
-        if (attempt < attempts) {
-          await Future.delayed(_retryDelay);
-          continue;
-        }
       } on SocketException catch (e) {
         lastError = e;
-        if (attempt < attempts) {
-          await Future.delayed(_retryDelay);
-          continue;
-        }
+      }
+
+      if (attempt < attempts) {
+        await Future.delayed(_retryDelay);
       }
     }
 
     if (lastError is TimeoutException) {
-      throw Exception(
-        'Request timed out after ${timeout.inSeconds}s while trying to $actionLabel. Please retry.',
-      );
+      throw Exception('Request timed out while trying to $actionLabel.');
     }
 
-    throw Exception(
-      'Unable to reach server while trying to $actionLabel. Check internet and retry.',
-    );
+    throw Exception('Unable to reach server while trying to $actionLabel.');
   }
 
-  static Map<String, String> _chatHeaders({
+  static Map<String, String> chatHeaders({
     required String userId,
     required String userRole,
   }) {
@@ -104,21 +73,41 @@ class ChatService {
     };
   }
 
+  static Future<Map<String, dynamic>> authorizeRealtime({
+    required String userId,
+    required String userRole,
+    required String socketId,
+    required String channelName,
+  }) async {
+    final uri = Uri.parse(ApiConfig.realtimeAuthUrl);
+    final response = await _performRequest(
+      request: () => http.post(
+        uri,
+        headers: chatHeaders(userId: userId, userRole: userRole),
+        body: jsonEncode({
+          'socket_id': socketId,
+          'channel_name': channelName,
+        }),
+      ),
+      actionLabel: 'authorize realtime channel',
+      timeout: _realtimeAuthTimeout,
+      attempts: 1,
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to authorize realtime channel');
+    }
+
+    return Map<String, dynamic>.from(
+      jsonDecode(response.body) as Map<String, dynamic>,
+    );
+  }
+
   static Future<List<ChatUser>> getChatUsers({
     required String currentUserId,
     int perPage = 100,
-    bool forceRefresh = false,
   }) async {
-    final usersCacheKey = '$currentUserId|$perPage';
-    final cachedUsers = _usersCache[usersCacheKey];
-    if (!forceRefresh && cachedUsers != null && cachedUsers.isFresh(_usersCacheTtl)) {
-      return cachedUsers.data;
-    }
-
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/users?per_page=$perPage&page=1',
-    );
-
+    final uri = Uri.parse('${ApiConfig.baseUrl}/users?per_page=$perPage&page=1');
     final response = await _performRequest(
       request: () =>
           http.get(uri, headers: {'Content-Type': 'application/json'}),
@@ -129,18 +118,98 @@ class ChatService {
       throw Exception('Failed to load users for chat');
     }
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final list = data?['data'];
-    if (list is List) {
-      final users = list
-          .whereType<Map>()
-          .map((e) => ChatUser.fromJson(Map<String, dynamic>.from(e)))
-          .where((u) => u.id.isNotEmpty && u.id != currentUserId)
-          .toList();
-      _usersCache[usersCacheKey] = _MemoryCacheEntry(users);
-      return users;
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final list = data['data'];
+    if (list is! List) return [];
+
+    return list
+        .whereType<Map>()
+        .map((item) => ChatUser.fromJson(Map<String, dynamic>.from(item)))
+        .where((user) => user.id.isNotEmpty && user.id != currentUserId)
+        .toList();
+  }
+
+  static Future<List<ChatThread>> getThreads({
+    required String userId,
+    required String role,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/chat/threads');
+    final response = await _performRequest(
+      request: () =>
+          http.get(uri, headers: chatHeaders(userId: userId, userRole: role)),
+      actionLabel: 'load chat threads',
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load chat threads');
     }
-    return [];
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final list = data['data'];
+    if (list is! List) return [];
+
+    return list
+        .whereType<Map>()
+        .map((item) => ChatThread.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  static Future<ChatMessagesPage> getMessages({
+    required String threadId,
+    required String userId,
+    required String userRole,
+    int? afterSortKey,
+    int? beforeSortKey,
+    int limit = 80,
+    bool includeReactions = false,
+  }) async {
+    final queryParams = <String, String>{
+      'limit': limit.toString(),
+      'include_reactions': includeReactions ? '1' : '0',
+    };
+    if (afterSortKey != null) queryParams['after_sort_key'] = '$afterSortKey';
+    if (beforeSortKey != null) queryParams['before_sort_key'] = '$beforeSortKey';
+
+    final uri = Uri.parse(
+      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages',
+    ).replace(queryParameters: queryParams);
+
+    final response = await _performRequest(
+      request: () =>
+          http.get(uri, headers: chatHeaders(userId: userId, userRole: userRole)),
+      actionLabel: 'load chat messages',
+    );
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to load chat messages');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final list = data['data'];
+    final meta = data['meta'] is Map<String, dynamic>
+        ? data['meta'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    final cursor = meta['cursor'] is Map<String, dynamic>
+        ? meta['cursor'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+
+    final messages = list is List
+        ? list
+              .whereType<Map>()
+              .map((item) => ChatMessage.fromJson(Map<String, dynamic>.from(item)))
+              .toList()
+        : <ChatMessage>[];
+
+    return ChatMessagesPage(
+      messages: messages,
+      hasMoreBefore: meta['has_more_before'] == true,
+      firstSortKey: cursor['first_sort_key'] != null
+          ? int.tryParse(cursor['first_sort_key'].toString())
+          : null,
+      lastSortKey: cursor['last_sort_key'] != null
+          ? int.tryParse(cursor['last_sort_key'].toString())
+          : null,
+    );
   }
 
   static Future<ChatThread> openDirectThread({
@@ -150,20 +219,15 @@ class ChatService {
     String? title,
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/chat/threads/direct');
-
-    final payload = <String, dynamic>{
-      'user_a_id': userAId,
-      'user_b_id': userBId,
-    };
-    if (title != null && title.trim().isNotEmpty) {
-      payload['title'] = title.trim();
-    }
-
     final response = await _performRequest(
       request: () => http.post(
         uri,
-        headers: _chatHeaders(userId: userAId, userRole: userRole),
-        body: jsonEncode(payload),
+        headers: chatHeaders(userId: userAId, userRole: userRole),
+        body: jsonEncode({
+          'user_a_id': userAId,
+          'user_b_id': userBId,
+          if (title != null && title.trim().isNotEmpty) 'title': title.trim(),
+        }),
       ),
       actionLabel: 'open direct chat',
     );
@@ -172,93 +236,8 @@ class ChatService {
       throw Exception('Failed to open direct chat');
     }
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final thread = data?['data'];
-    if (thread is Map<String, dynamic>) {
-      return ChatThread.fromJson(thread);
-    }
-    throw Exception('Invalid direct chat response');
-  }
-
-  static Future<List<ChatThread>> getThreads({
-    required String userId,
-    required String role,
-    bool forceRefresh = false,
-  }) async {
-    final threadsCacheKey = '$userId|$role';
-    final cachedThreads = _threadsCache[threadsCacheKey];
-    if (!forceRefresh && cachedThreads != null && cachedThreads.isFresh(_threadsCacheTtl)) {
-      return cachedThreads.data;
-    }
-
-    final uri = Uri.parse('${ApiConfig.baseUrl}/chat/threads');
-    final response = await _performRequest(
-      request: () => http.get(
-        uri,
-        headers: _chatHeaders(userId: userId, userRole: role),
-      ),
-      actionLabel: 'load chat threads',
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to load chat threads');
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final list = data?['data'];
-    if (list is List) {
-      final threads = list
-          .whereType<Map>()
-          .map((e) => ChatThread.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-      _threadsCache[threadsCacheKey] = _MemoryCacheEntry(threads);
-      return threads;
-    }
-    return [];
-  }
-
-  static Future<List<ChatMessage>> getMessages({
-    required String threadId,
-    required String userId,
-    required String userRole,
-    String? sinceMessageId,
-    bool includeReactions = false,
-    int limit = 80,
-  }) async {
-    final queryParams = <String, String>{
-      'limit': limit.toString(),
-      'include_reactions': includeReactions ? '1' : '0',
-    };
-    if (sinceMessageId != null) {
-      queryParams['since_id'] = sinceMessageId;
-    }
-
-    final query = Uri(queryParameters: queryParams).query;
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages?$query',
-    );
-
-    final response = await _performRequest(
-      request: () => http.get(
-        uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
-      ),
-      actionLabel: 'load chat messages',
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to load chat messages');
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final list = data?['data'];
-    if (list is List) {
-      return list
-          .whereType<Map>()
-          .map((e) => ChatMessage.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-    }
-    return [];
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return ChatThread.fromJson(Map<String, dynamic>.from(data['data'] as Map));
   }
 
   static Future<ChatMessage> sendMessage({
@@ -267,233 +246,66 @@ class ChatService {
     required String senderRole,
     required String body,
     String? clientMessageId,
-    String? taskId,
-    int? subtaskIndex,
   }) async {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages',
-    );
-
-    final payload = <String, dynamic>{'body': body};
-    if (clientMessageId != null && clientMessageId.trim().isNotEmpty) {
-      payload['client_message_id'] = clientMessageId.trim();
-    }
-    if (taskId != null) {
-      payload['task_id'] = taskId;
-    }
-    if (subtaskIndex != null) {
-      payload['subtask_index'] = subtaskIndex;
-    }
-
+    final uri = Uri.parse('${ApiConfig.baseUrl}/chat/threads/$threadId/messages');
     final response = await _performRequest(
       request: () => http.post(
         uri,
-        headers: _chatHeaders(userId: senderId, userRole: senderRole),
-        body: jsonEncode(payload),
+        headers: chatHeaders(userId: senderId, userRole: senderRole),
+        body: jsonEncode({
+          'body': body,
+          if (clientMessageId != null && clientMessageId.trim().isNotEmpty)
+            'client_message_id': clientMessageId.trim(),
+        }),
       ),
       actionLabel: 'send message',
       timeout: _sendMessageTimeout,
-      attempts: _maxSendAttempts,
+      attempts: 1,
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {
+      String message = 'Failed to send message';
       try {
-        final data = jsonDecode(response.body) as Map<String, dynamic>?;
-        final message =
-            data?['message'] ??
-            (data?['errors'] != null ? data!['errors'].toString() : null);
-        if (message != null && message.toString().trim().isNotEmpty) {
-          throw Exception(message.toString().trim());
+        final payload = jsonDecode(response.body) as Map<String, dynamic>;
+        final apiMessage = payload['message']?.toString().trim();
+        if (apiMessage != null && apiMessage.isNotEmpty) {
+          message = apiMessage;
         }
-      } on FormatException {
-        // Ignore invalid JSON body and fallback to generic status message.
+      } catch (_) {
+        // Keep fallback message when response is not JSON.
       }
-      throw Exception('Failed to send message (${response.statusCode})');
+      throw Exception(message);
     }
 
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final msgJson = data?['data'] as Map<String, dynamic>?;
-    if (msgJson == null) {
-      throw Exception('Invalid response from server');
-    }
-    return ChatMessage.fromJson(msgJson);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    return ChatMessage.fromJson(Map<String, dynamic>.from(data['data'] as Map));
   }
 
-  static Future<void> markThreadRead({
+  static Future<void> updateReceipts({
     required String threadId,
     required String userId,
     required String userRole,
-    required String lastReadMessageId,
+    String? deliveredMessageId,
+    String? seenMessageId,
   }) async {
-    final uri = Uri.parse('${ApiConfig.baseUrl}/chat/threads/$threadId/read');
-
+    final uri = Uri.parse('${ApiConfig.baseUrl}/chat/threads/$threadId/receipts');
     final response = await _performRequest(
       request: () => http.post(
         uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
-        body: jsonEncode({'last_read_message_id': lastReadMessageId}),
+        headers: chatHeaders(userId: userId, userRole: userRole),
+        body: jsonEncode({
+          if (deliveredMessageId != null) 'delivered_message_id': deliveredMessageId,
+          if (seenMessageId != null) 'seen_message_id': seenMessageId,
+        }),
       ),
-      actionLabel: 'mark thread as read',
+      actionLabel: 'update message receipts',
+      timeout: _receiptsTimeout,
+      attempts: 1,
     );
 
     if (response.statusCode != 200) {
-      throw Exception('Failed to mark thread as read');
+      throw Exception('Failed to update receipts');
     }
-  }
-
-  static Future<void> markMessageDelivered({
-    required String threadId,
-    required String messageId,
-    required String userId,
-    required String userRole,
-  }) async {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages/$messageId/delivered',
-    );
-
-    final response = await _performRequest(
-      request: () => http.post(
-        uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
-      ),
-      actionLabel: 'mark message as delivered',
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to mark message as delivered');
-    }
-  }
-
-  static Future<void> markMessageSeen({
-    required String threadId,
-    required String messageId,
-    required String userId,
-    required String userRole,
-  }) async {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages/$messageId/seen',
-    );
-
-    final response = await _performRequest(
-      request: () => http.post(
-        uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
-      ),
-      actionLabel: 'mark message as seen',
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to mark message as seen');
-    }
-  }
-
-  static Future<List<ChatMessageReaction>> getReactions({
-    required String threadId,
-    required String messageId,
-    required String userId,
-    required String userRole,
-  }) async {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages/$messageId/reactions',
-    );
-
-    final response = await _performRequest(
-      request: () => http.get(
-        uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
-      ),
-      actionLabel: 'load reactions',
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to load reactions');
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final list = data?['data'];
-    if (list is List) {
-      return list
-          .whereType<Map>()
-          .map(
-            (e) => ChatMessageReaction.fromJson(Map<String, dynamic>.from(e)),
-          )
-          .toList();
-    }
-    return [];
-  }
-
-  static Future<List<ChatMessageReaction>> addReaction({
-    required String threadId,
-    required String messageId,
-    required String userId,
-    required String userRole,
-    required String emoji,
-  }) async {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages/$messageId/reactions',
-    );
-
-    final response = await _performRequest(
-      request: () => http.post(
-        uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
-        body: jsonEncode({'emoji': emoji}),
-      ),
-      actionLabel: 'add reaction',
-    );
-
-    if (response.statusCode != 200 && response.statusCode != 201) {
-      throw Exception('Failed to add reaction');
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final list = data?['data'];
-    if (list is List) {
-      return list
-          .whereType<Map>()
-          .map(
-            (e) => ChatMessageReaction.fromJson(Map<String, dynamic>.from(e)),
-          )
-          .toList();
-    }
-    return [];
-  }
-
-  static Future<List<ChatMessageReaction>> removeReaction({
-    required String threadId,
-    required String messageId,
-    required String userId,
-    required String userRole,
-    required String emoji,
-  }) async {
-    final uri = Uri.parse(
-      '${ApiConfig.baseUrl}/chat/threads/$threadId/messages/$messageId/reactions',
-    );
-
-    final response = await _performRequest(
-      request: () => http.delete(
-        uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
-        body: jsonEncode({'emoji': emoji}),
-      ),
-      actionLabel: 'remove reaction',
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to remove reaction');
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final list = data?['data'];
-    if (list is List) {
-      return list
-          .whereType<Map>()
-          .map(
-            (e) => ChatMessageReaction.fromJson(Map<String, dynamic>.from(e)),
-          )
-          .toList();
-    }
-    return [];
   }
 
   static Future<void> setTyping({
@@ -503,19 +315,16 @@ class ChatService {
     required bool isTyping,
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/chat/threads/$threadId/typing');
-
-    final response = await _performRequest(
+    await _performRequest(
       request: () => http.post(
         uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
+        headers: chatHeaders(userId: userId, userRole: userRole),
         body: jsonEncode({'is_typing': isTyping}),
       ),
       actionLabel: 'update typing state',
+      timeout: _typingTimeout,
+      attempts: 1,
     );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to update typing state');
-    }
   }
 
   static Future<void> setPresence({
@@ -524,70 +333,15 @@ class ChatService {
     required bool isOnline,
   }) async {
     final uri = Uri.parse('${ApiConfig.baseUrl}/chat/presence');
-
-    final response = await _performRequest(
+    await _performRequest(
       request: () => http.post(
         uri,
-        headers: _chatHeaders(userId: userId, userRole: userRole),
+        headers: chatHeaders(userId: userId, userRole: userRole),
         body: jsonEncode({'is_online': isOnline}),
       ),
       actionLabel: 'update presence',
+      timeout: _presenceTimeout,
+      attempts: 1,
     );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to update presence');
-    }
-  }
-
-  static Stream<List<ChatMessage>> watchThreadMessages({
-    required String threadId,
-    required String userId,
-    required String userRole,
-    String? initialSinceMessageId,
-    Duration interval = const Duration(seconds: 2),
-    int limit = 30,
-  }) async* {
-    var sinceId = initialSinceMessageId;
-
-    while (true) {
-      try {
-        final updates = await getMessages(
-          threadId: threadId,
-          userId: userId,
-          userRole: userRole,
-          sinceMessageId: sinceId,
-          limit: limit,
-        );
-
-        if (updates.isNotEmpty) {
-          sinceId = updates.last.id;
-          yield updates;
-        }
-      } catch (_) {
-        // Swallow transient network failures and keep stream alive.
-      }
-
-      await Future.delayed(interval);
-    }
-  }
-
-  static Stream<List<ChatThread>> watchThreads({
-    required String userId,
-    required String role,
-    Duration interval = const Duration(seconds: 5),
-  }) async* {
-    while (true) {
-      try {
-        final threads = await getThreads(
-          userId: userId,
-          role: role,
-          forceRefresh: true,
-        );
-        yield threads;
-      } catch (_) {
-        // Keep watcher alive on transient failures.
-      }
-      await Future.delayed(interval);
-    }
   }
 }

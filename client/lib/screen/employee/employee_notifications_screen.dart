@@ -25,6 +25,23 @@ class _EmployeeNotificationsScreenState
   String? _errorMessage;
   List<NotificationModel> _notifications = [];
 
+  Color _noteColor(NotificationModel n) {
+    final text = n.message.toLowerCase();
+    if (text.contains('completed') || text.contains('done')) {
+      return const Color(0xFF1B7F3A);
+    }
+    if (text.contains('deadline') || text.contains('urgent') || text.contains('overdue')) {
+      return const Color(0xFFB45309);
+    }
+    if (text.contains('pending') || text.contains('review') || text.contains('status')) {
+      return const Color(0xFFD97706);
+    }
+    if (text.contains('update') || n.type == 'update') {
+      return const Color(0xFF1D4ED8);
+    }
+    return const Color(0xFF374151);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -157,6 +174,7 @@ class _EmployeeNotificationsScreenState
           final isReminder = n.type == 'reminder';
           final icon = isReminder ? Icons.alarm : Icons.update;
           final color = isReminder ? Colors.orange : Colors.blue;
+          final noteColor = _noteColor(n);
 
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
@@ -172,8 +190,8 @@ class _EmployeeNotificationsScreenState
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(12),
                   color: n.isRead
-                      ? Colors.grey.shade50
-                      : color.withValues(alpha: 0.05),
+                      ? const Color(0xFFFCFAF5)
+                      : color.withValues(alpha: 0.08),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,8 +246,10 @@ class _EmployeeNotificationsScreenState
                           Text(
                             n.message,
                             style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey.shade800,
+                              fontSize: 15,
+                              height: 1.35,
+                              color: noteColor,
+                              fontWeight: FontWeight.w500,
                             ),
                             maxLines: 4,
                             overflow: TextOverflow.ellipsis,

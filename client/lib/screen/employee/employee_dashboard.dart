@@ -104,7 +104,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       final threads = await ChatService.getThreads(
         userId: widget.userId,
         role: widget.userRole,
-        forceRefresh: true,
       );
       if (!mounted) return;
       final unread = threads
@@ -646,10 +645,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       text: "Project",
                     ),
                     Tab(
-                      icon: Icon(Icons.person_outline, size: 22),
-                      text: "Personal",
-                    ),
-                    Tab(
                       icon: Icon(Icons.calendar_month, size: 22),
                       text: "Monthly",
                     ),
@@ -660,6 +655,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     Tab(
                       icon: Icon(Icons.calendar_today, size: 22),
                       text: "Yearly",
+                    ),
+                    Tab(
+                      icon: Icon(Icons.person_outline, size: 22),
+                      text: "Personal",
                     ),
                     Tab(icon: Icon(Icons.more_horiz, size: 22), text: "Other"),
                   ],
@@ -672,10 +671,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   children: [
                     _buildTaskTab('daily'),
                     _buildTaskTab('project'),
-                    _buildTaskTab('personal'),
                     _buildTaskTab('monthly'),
                     _buildTaskTab('quarterly'),
                     _buildTaskTab('yearly'),
+                    _buildTaskTab('personal'),
                     _buildTaskTab('other'),
                   ],
                 ),
@@ -1076,7 +1075,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   ),
                   const SizedBox(height: 4),
                   ...task.subtasksWithStatus
-                      .take(3)
                       .toList()
                       .asMap()
                       .entries
@@ -1204,17 +1202,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           ),
                         );
                       }),
-                  if (task.subtasksWithStatus.length > 3)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        '+${task.subtasksWithStatus.length - 3} more',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade500,
-                        ),
-                      ),
-                    ),
                 ],
                 if (task.status == 'need_help' &&
                     task.needHelpNote != null &&
@@ -1617,10 +1604,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   static const _categories = [
     'daily',
     'project',
-    'personal',
     'monthly',
     'quarterly',
     'yearly',
+    'personal',
     'other',
   ];
   static const _priorities = ['low', 'medium', 'high', 'critical'];

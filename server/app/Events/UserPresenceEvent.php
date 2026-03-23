@@ -4,38 +4,39 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
-use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 
-class UserPresenceEvent implements ShouldBroadcast, ShouldQueue
+class UserPresenceEvent implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
+    /**
+     * @param  string[]  $channels
+     * @param  array<string, mixed>  $payload
+     */
     public function __construct(
-        public string $userId,
-        public bool $isOnline,
-        public ?string $lastSeenAt
+        public array $channels,
+        public array $payload = []
     ) {
     }
 
     public function broadcastAs(): string
     {
-        return 'chat.presence.event';
+        return 'presence.updated';
     }
 
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('presence.user.' . $this->userId)];
+        return array_map(
+            static fn (string $channel) => new PrivateChannel($channel),
+            $this->channels
+        );
     }
 
     public function broadcastWith(): array
     {
-        return [
-            'user_id' => $this->userId,
-            'is_online' => $this->isOnline,
-            'last_seen_at' => $this->lastSeenAt,
-        ];
+        return $this->payload;
     }
 }

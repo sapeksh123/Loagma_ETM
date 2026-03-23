@@ -34,15 +34,21 @@ class NotificationService {
     );
 
     if (response.statusCode != 200 && response.statusCode != 201) {
+      String? apiMessage;
       try {
         final data = jsonDecode(response.body) as Map<String, dynamic>?;
         final message = data?['message'] ??
             (data?['errors'] != null ? data!['errors'].toString() : null);
         if (message != null && message.toString().trim().isNotEmpty) {
-          throw Exception(message.toString().trim());
+          apiMessage = message.toString().trim();
         }
-      } catch (_) {}
-      throw Exception('Failed to send notification (${response.statusCode})');
+      } catch (_) {
+        // Ignore parse errors and fall back to status code message.
+      }
+
+      throw Exception(
+        apiMessage ?? 'Failed to send notification (${response.statusCode})',
+      );
     }
   }
 

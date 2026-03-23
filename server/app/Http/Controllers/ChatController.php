@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Events\ChatThreadEvent;
 use App\Events\UserPresenceEvent;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -43,60 +44,68 @@ class ChatController extends Controller
                     't.target_user_id',
                     't.target_role',
                     't.last_message_at',
-                    'cp.unread_count'
+                    'cp.unread_count',
+                    'cp.last_delivered_message_id',
+                    'cp.last_read_message_id'
                 )
                 ->where('cp.user_id', $userId)
                 ->orderByDesc('t.last_message_at')
                 ->orderByDesc('t.created_at')
                 ->get();
 
-            $directThreadIds = $threads
-                ->where('type', 'direct')
-                ->pluck('id')
-                ->values()
-                ->all();
+            $enrichedThreads = $this->enrichThreads($threads, $userId);
 
-            $counterpartsByThread = collect();
-            if (!empty($directThreadIds)) {
-                $counterpartsByThread = DB::table('chat_participants as cp')
-                    ->whereIn('cp.thread_id', $directThreadIds)
-                    ->where('cp.user_id', '!=', $userId)
-                    ->select('cp.thread_id', 'cp.user_id as counterpart_user_id')
-                    ->get()
-                    ->keyBy('thread_id');
-
-                $counterpartUserIds = $counterpartsByThread
-                    ->pluck('counterpart_user_id')
-                    ->filter()
-                    ->values()
-                    ->all();
-
-                $names = $this->fetchUsersByIds($counterpartUserIds);
-
-                $counterpartsByThread = $counterpartsByThread->map(function ($row) use ($names) {
-                    $row->counterpart_name = $names[$row->counterpart_user_id]->name ?? null;
-                    return $row;
-                });
-            }
-
-            $threads = $threads->map(function ($thread) use ($counterpartsByThread) {
-                if ($thread->type === 'direct') {
-                    $counterpart = $counterpartsByThread->get($thread->id);
-                    $thread->counterpart_user_id = $counterpart->counterpart_user_id ?? null;
-                    $thread->counterpart_name = $counterpart->counterpart_name ?? null;
-                    if (!empty($thread->counterpart_name)) {
-                        $thread->title = $thread->counterpart_name;
-                    }
-                }
-                return $thread;
-            });
-
-            Cache::put($cacheKey, $threads->values()->all(), now()->addSeconds(6));
+            Cache::put($cacheKey, $enrichedThreads, now()->addSeconds(6));
 
             return response()->json([
                 'status' => 'success',
-                'data' => $threads,
+                'data' => $enrichedThreads,
             ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Custom auth endpoint for Reverb / Pusher-compatible private channels.
+     */
+    public function authorizeRealtime(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'socket_id' => 'required|string|max:191',
+                'channel_name' => 'required|string|max:191',
+            ]);
+
+            $actorUserId = $this->actorUserId($request);
+            $channelName = trim($validated['channel_name']);
+
+            if (!$this->canAuthorizeChannel($channelName, $actorUserId)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Not authorized for requested realtime channel',
+                ], 403);
+            }
+
+            $authString = $validated['socket_id'] . ':' . $channelName;
+            $signature = hash_hmac(
+                'sha256',
+                $authString,
+                (string) config('broadcasting.connections.reverb.secret')
+            );
+
+            return response()->json([
+                'auth' => config('broadcasting.connections.reverb.key') . ':' . $signature,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -145,11 +154,10 @@ class ChatController extends Controller
                 ->first();
 
             if ($existing) {
-                $thread = $existing;
+                $threadId = $existing->id;
             } else {
                 $threadId = Str::uuid()->toString();
 
-                // Fallback generic title; UI can customize.
                 $title = $validated['title'] ?? 'Direct chat';
 
                 DB::table('chat_threads')->insert([
@@ -162,12 +170,12 @@ class ChatController extends Controller
                     'last_message_at' => null,
                 ]);
 
-                // Participants
                 DB::table('chat_participants')->insert([
                     [
                         'id' => Str::uuid()->toString(),
                         'thread_id' => $threadId,
                         'user_id' => $userA,
+                        'last_delivered_message_id' => null,
                         'last_read_message_id' => null,
                         'unread_count' => 0,
                     ],
@@ -175,19 +183,19 @@ class ChatController extends Controller
                         'id' => Str::uuid()->toString(),
                         'thread_id' => $threadId,
                         'user_id' => $userB,
+                        'last_delivered_message_id' => null,
                         'last_read_message_id' => null,
                         'unread_count' => 0,
                     ],
                 ]);
-
-                $thread = DB::table('chat_threads')->where('id', $threadId)->first();
             }
 
             $this->invalidateThreadListCaches([$userA, $userB]);
+            $this->broadcastThreadState($threadId);
 
             return response()->json([
                 'status' => 'success',
-                'data' => $thread,
+                'data' => $this->buildThreadPayload($threadId, $userA),
             ]);
         } catch (ValidationException $e) {
             return response()->json([
@@ -239,7 +247,7 @@ class ChatController extends Controller
             $existing = $query->first();
 
             if ($existing) {
-                $thread = $existing;
+                $threadId = $existing->id;
             } else {
                 $threadId = Str::uuid()->toString();
                 $title = $validated['title']
@@ -262,18 +270,18 @@ class ChatController extends Controller
                     'id' => Str::uuid()->toString(),
                     'thread_id' => $threadId,
                     'user_id' => $createdBy,
+                    'last_delivered_message_id' => null,
                     'last_read_message_id' => null,
                     'unread_count' => 0,
                 ]);
-
-                $thread = DB::table('chat_threads')->where('id', $threadId)->first();
             }
 
             $this->invalidateThreadListCaches([$createdBy]);
+            $this->broadcastThreadState($threadId);
 
             return response()->json([
                 'status' => 'success',
-                'data' => $thread,
+                'data' => $this->buildThreadPayload($threadId, $createdBy),
             ]);
         } catch (ValidationException $e) {
             return response()->json([
@@ -290,18 +298,17 @@ class ChatController extends Controller
     }
 
     /**
-     * List messages for a thread, optionally only messages newer than a given ID.
+     * List messages for a thread using cursor-based sync.
      */
     public function listMessages(Request $request, string $threadId)
     {
         try {
+            $afterSortKey = $this->toNullableInt($request->query('after_sort_key'));
+            $beforeSortKey = $this->toNullableInt($request->query('before_sort_key'));
             $sinceId = $request->query('since_id');
             $includeReactions = $this->toBool($request->query('include_reactions', false));
             $limit = (int) $request->query('limit', 80);
-            if ($limit <= 0) {
-                $limit = 80;
-            }
-            $limit = min($limit, 200);
+            $limit = max(1, min($limit, 200));
             $actorUserId = $this->actorUserId($request);
 
             if (!$this->isThreadParticipant($threadId, $actorUserId)) {
@@ -311,27 +318,52 @@ class ChatController extends Controller
                 ], 403);
             }
 
-            $query = DB::table('chat_messages')
-                ->where('thread_id', $threadId)
-                ->orderBy('created_at')
-                ->orderBy('id');
-
-            if ($sinceId) {
-                $sinceMessage = DB::table('chat_messages')
-                    ->where('id', $sinceId)
-                    ->first();
-                if ($sinceMessage) {
-                    $query->where(function ($q) use ($sinceMessage, $sinceId) {
-                        $q->where('created_at', '>', $sinceMessage->created_at)
-                            ->orWhere(function ($sameTime) use ($sinceMessage, $sinceId) {
-                                $sameTime->where('created_at', '=', $sinceMessage->created_at)
-                                    ->where('id', '>', $sinceId);
-                            });
-                    });
-                }
+            if ($afterSortKey === null && $beforeSortKey === null && !empty($sinceId)) {
+                $afterSortKey = $this->sortKeyForMessageId((string) $sinceId);
             }
 
-            $messages = $query->limit($limit)->get();
+            $baseQuery = DB::table('chat_messages')
+                ->where('thread_id', $threadId);
+
+            $hasMoreBefore = false;
+
+            if ($beforeSortKey !== null) {
+                $messages = (clone $baseQuery)
+                    ->where('sort_key', '<', $beforeSortKey)
+                    ->orderByDesc('sort_key')
+                    ->orderByDesc('id')
+                    ->limit($limit + 1)
+                    ->get();
+
+                $hasMoreBefore = $messages->count() > $limit;
+                if ($hasMoreBefore) {
+                    $messages = $messages->slice(0, $limit);
+                }
+
+                $messages = $messages->reverse()->values();
+            } elseif ($afterSortKey !== null) {
+                $messages = (clone $baseQuery)
+                    ->where('sort_key', '>', $afterSortKey)
+                    ->orderBy('sort_key')
+                    ->orderBy('id')
+                    ->limit($limit)
+                    ->get();
+
+                $hasMoreBefore = $this->hasEarlierMessages($threadId, $messages);
+            } else {
+                $messages = (clone $baseQuery)
+                    ->orderByDesc('sort_key')
+                    ->orderByDesc('id')
+                    ->limit($limit + 1)
+                    ->get();
+
+                $hasMoreBefore = $messages->count() > $limit;
+                if ($hasMoreBefore) {
+                    $messages = $messages->slice(0, $limit);
+                }
+
+                $messages = $messages->reverse()->values();
+            }
 
             if ($includeReactions && $messages->isNotEmpty()) {
                 $messageIds = $messages->pluck('id')->values()->all();
@@ -359,6 +391,13 @@ class ChatController extends Controller
             return response()->json([
                 'status' => 'success',
                 'data' => $messages,
+                'meta' => [
+                    'has_more_before' => $hasMoreBefore,
+                    'cursor' => [
+                        'first_sort_key' => $messages->first()->sort_key ?? null,
+                        'last_sort_key' => $messages->last()->sort_key ?? null,
+                    ],
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -415,6 +454,14 @@ class ChatController extends Controller
                 ], 403);
             }
 
+            $body = trim((string) $validated['body']);
+            if ($body === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Message body cannot be empty',
+                ], 422);
+            }
+
             $clientMessageId = isset($validated['client_message_id'])
                 ? trim((string) $validated['client_message_id'])
                 : '';
@@ -426,6 +473,7 @@ class ChatController extends Controller
                 $actorUserId,
                 $actorRole,
                 $validated,
+                $body,
                 $clientMessageId,
                 $hasClientMessageIdColumn
             ) {
@@ -442,15 +490,17 @@ class ChatController extends Controller
                 }
 
                 $newMessageId = Str::uuid()->toString();
+                $sortKey = $this->nextSortKey();
 
                 $insertPayload = [
                     'id' => $newMessageId,
                     'thread_id' => $threadId,
                     'sender_id' => $actorUserId,
                     'sender_role' => $actorRole,
-                    'body' => $validated['body'],
+                    'body' => $body,
                     'task_id' => $validated['task_id'] ?? null,
                     'subtask_index' => $validated['subtask_index'] ?? null,
+                    'sort_key' => $sortKey,
                     'sent_at' => now(),
                     'delivered_at' => null,
                     'seen_at' => null,
@@ -468,6 +518,7 @@ class ChatController extends Controller
                     ->where('thread_id', $threadId)
                     ->where('user_id', $actorUserId)
                     ->update([
+                        'last_delivered_message_id' => $newMessageId,
                         'last_read_message_id' => $newMessageId,
                     ]);
 
@@ -493,9 +544,15 @@ class ChatController extends Controller
             $this->invalidateThreadListCaches($participantUserIds);
 
             if ($this->shouldBroadcast($request)) {
-                $this->dispatchChatThreadEvent($threadId, 'message_sent', [
-                    'message' => (array) $message,
-                ]);
+                $this->dispatchChatThreadEvent(
+                    [$this->threadChannelName($threadId)],
+                    'message.created',
+                    [
+                        'thread_id' => $threadId,
+                        'message' => (array) $message,
+                    ]
+                );
+                $this->broadcastThreadState($threadId);
             }
 
             return response()->json([
@@ -526,70 +583,78 @@ class ChatController extends Controller
                 'last_read_message_id' => 'required|string',
             ]);
 
-            $actorUserId = $this->actorUserId($request);
-
-            $participant = DB::table('chat_participants')
-                ->where('thread_id', $threadId)
-                ->where('user_id', $actorUserId)
-                ->first();
-
-            if (!$participant) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Participant not found for this thread',
-                ], 404);
-            }
-
-            $lastReadMessage = DB::table('chat_messages')
-                ->where('id', $validated['last_read_message_id'])
-                ->where('thread_id', $threadId)
-                ->first();
-
-            if (!$lastReadMessage) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'last_read_message_id is not part of this thread',
-                ], 422);
-            }
-
-            DB::transaction(function () use ($participant, $validated, $threadId, $actorUserId, $lastReadMessage) {
-                DB::table('chat_participants')
-                    ->where('id', $participant->id)
-                    ->update([
-                        'last_read_message_id' => $validated['last_read_message_id'],
-                        'unread_count' => 0,
-                    ]);
-
-                DB::table('chat_messages')
-                    ->where('thread_id', $threadId)
-                    ->where('sender_id', '!=', $actorUserId)
-                    ->where(function ($q) use ($lastReadMessage) {
-                        $q->where('created_at', '<', $lastReadMessage->created_at)
-                            ->orWhere(function ($sameTime) use ($lastReadMessage) {
-                                $sameTime->where('created_at', '=', $lastReadMessage->created_at)
-                                    ->where('id', '<=', $lastReadMessage->id);
-                            });
-                    })
-                    ->where(function ($query) {
-                        $query->whereNull('seen_at')->orWhereNull('delivered_at');
-                    })
-                    ->update([
-                        'delivered_at' => now(),
-                        'seen_at' => now(),
-                    ]);
-            });
-
-            $this->invalidateThreadListCaches([$actorUserId]);
+            $payload = $this->applyReceiptUpdate(
+                $threadId,
+                $this->actorUserId($request),
+                $validated['last_read_message_id'],
+                $validated['last_read_message_id'],
+                $this->shouldBroadcast($request)
+            );
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Thread marked as read',
+                'data' => $payload,
             ]);
         } catch (ValidationException $e) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
                 'errors' => $e->errors(),
+            ], 422);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Batch update delivered / seen receipt cursors.
+     */
+    public function updateReceipts(Request $request, string $threadId)
+    {
+        try {
+            $validated = $request->validate([
+                'delivered_message_id' => 'nullable|string',
+                'seen_message_id' => 'nullable|string',
+            ]);
+
+            if (empty($validated['delivered_message_id']) && empty($validated['seen_message_id'])) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'At least one receipt cursor is required',
+                ], 422);
+            }
+
+            $payload = $this->applyReceiptUpdate(
+                $threadId,
+                $this->actorUserId($request),
+                $validated['delivered_message_id'] ?? null,
+                $validated['seen_message_id'] ?? null,
+                $this->shouldBroadcast($request)
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $payload,
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
             ], 422);
         } catch (\Exception $e) {
             return response()->json([
@@ -605,50 +670,23 @@ class ChatController extends Controller
     public function markMessageDelivered(Request $request, string $threadId, string $messageId)
     {
         try {
-            $actorUserId = $this->actorUserId($request);
-
-            if (!$this->isThreadParticipant($threadId, $actorUserId)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Not authorized for this thread',
-                ], 403);
-            }
-
-            $message = DB::table('chat_messages')
-                ->where('id', $messageId)
-                ->where('thread_id', $threadId)
-                ->first();
-
-            if (!$message) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Message not found',
-                ], 404);
-            }
-
-            if ($message->sender_id !== $actorUserId) {
-                DB::table('chat_messages')
-                    ->where('id', $messageId)
-                    ->whereNull('delivered_at')
-                    ->update(['delivered_at' => now()]);
-
-                if ($this->shouldBroadcast($request)) {
-                    $this->dispatchChatThreadEvent($threadId, 'message_delivered', [
-                        'message_id' => $messageId,
-                        'by_user_id' => $actorUserId,
-                    ]);
-                }
-            }
+            $payload = $this->applyReceiptUpdate(
+                $threadId,
+                $this->actorUserId($request),
+                $messageId,
+                null,
+                $this->shouldBroadcast($request)
+            );
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Message marked as delivered',
+                'data' => $payload,
             ]);
-        } catch (ValidationException $e) {
+        } catch (\InvalidArgumentException $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Validation failed',
-                'errors' => $e->errors(),
+                'message' => $e->getMessage(),
             ], 422);
         } catch (\Exception $e) {
             return response()->json([
@@ -664,52 +702,23 @@ class ChatController extends Controller
     public function markMessageSeen(Request $request, string $threadId, string $messageId)
     {
         try {
-            $actorUserId = $this->actorUserId($request);
-
-            if (!$this->isThreadParticipant($threadId, $actorUserId)) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Not authorized for this thread',
-                ], 403);
-            }
-
-            $message = DB::table('chat_messages')
-                ->where('id', $messageId)
-                ->where('thread_id', $threadId)
-                ->first();
-
-            if (!$message) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Message not found',
-                ], 404);
-            }
-
-            if ($message->sender_id !== $actorUserId) {
-                DB::table('chat_messages')
-                    ->where('id', $messageId)
-                    ->update([
-                        'delivered_at' => DB::raw('COALESCE(delivered_at, NOW())'),
-                        'seen_at' => DB::raw('COALESCE(seen_at, NOW())'),
-                    ]);
-
-                if ($this->shouldBroadcast($request)) {
-                    $this->dispatchChatThreadEvent($threadId, 'message_seen', [
-                        'message_id' => $messageId,
-                        'by_user_id' => $actorUserId,
-                    ]);
-                }
-            }
+            $payload = $this->applyReceiptUpdate(
+                $threadId,
+                $this->actorUserId($request),
+                $messageId,
+                $messageId,
+                $this->shouldBroadcast($request)
+            );
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Message marked as seen',
+                'data' => $payload,
             ]);
-        } catch (ValidationException $e) {
+        } catch (\InvalidArgumentException $e) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Validation failed',
-                'errors' => $e->errors(),
+                'message' => $e->getMessage(),
             ], 422);
         } catch (\Exception $e) {
             return response()->json([
@@ -774,6 +783,7 @@ class ChatController extends Controller
             ]);
 
             $actorUserId = $this->actorUserId($request);
+            $thread = DB::table('chat_threads')->where('id', $threadId)->first();
 
             if (!$this->isThreadParticipant($threadId, $actorUserId)) {
                 return response()->json([
@@ -802,22 +812,23 @@ class ChatController extends Controller
                 'created_at' => now(),
             ]);
 
-            $reactions = DB::table('chat_message_reactions')
-                ->where('message_id', $messageId)
-                ->orderBy('created_at')
-                ->get();
+            $updatedMessage = $this->loadEnrichedMessage($messageId, $thread, $actorUserId);
 
             if ($this->shouldBroadcast($request)) {
-                $this->dispatchChatThreadEvent($threadId, 'reactions_updated', [
-                    'message_id' => $messageId,
-                    'reactions' => $reactions->map(fn ($r) => (array) $r)->values()->all(),
-                ]);
+                $this->dispatchChatThreadEvent(
+                    [$this->threadChannelName($threadId)],
+                    'message.updated',
+                    [
+                        'thread_id' => $threadId,
+                        'message' => (array) $updatedMessage,
+                    ]
+                );
             }
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Reaction added',
-                'data' => $reactions,
+                'data' => $updatedMessage->reactions ?? [],
             ], 201);
         } catch (ValidationException $e) {
             return response()->json([
@@ -844,6 +855,7 @@ class ChatController extends Controller
             ]);
 
             $actorUserId = $this->actorUserId($request);
+            $thread = DB::table('chat_threads')->where('id', $threadId)->first();
 
             if (!$this->isThreadParticipant($threadId, $actorUserId)) {
                 return response()->json([
@@ -870,22 +882,23 @@ class ChatController extends Controller
                 ->where('emoji', $validated['emoji'])
                 ->delete();
 
-            $reactions = DB::table('chat_message_reactions')
-                ->where('message_id', $messageId)
-                ->orderBy('created_at')
-                ->get();
+            $updatedMessage = $this->loadEnrichedMessage($messageId, $thread, $actorUserId);
 
             if ($this->shouldBroadcast($request)) {
-                $this->dispatchChatThreadEvent($threadId, 'reactions_updated', [
-                    'message_id' => $messageId,
-                    'reactions' => $reactions->map(fn ($r) => (array) $r)->values()->all(),
-                ]);
+                $this->dispatchChatThreadEvent(
+                    [$this->threadChannelName($threadId)],
+                    'message.updated',
+                    [
+                        'thread_id' => $threadId,
+                        'message' => (array) $updatedMessage,
+                    ]
+                );
             }
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Reaction removed',
-                'data' => $reactions,
+                'data' => $updatedMessage->reactions ?? [],
             ]);
         } catch (ValidationException $e) {
             return response()->json([
@@ -928,10 +941,15 @@ class ChatController extends Controller
             }
 
             if ($this->shouldBroadcast($request)) {
-                $this->dispatchChatThreadEvent($threadId, 'typing_updated', [
-                    'user_id' => $actorUserId,
-                    'is_typing' => $validated['is_typing'],
-                ]);
+                $this->dispatchChatThreadEvent(
+                    [$this->threadChannelName($threadId)],
+                    'typing.updated',
+                    [
+                        'thread_id' => $threadId,
+                        'user_id' => $actorUserId,
+                        'is_typing' => $validated['is_typing'],
+                    ]
+                );
             }
 
             return response()->json([
@@ -978,11 +996,18 @@ class ChatController extends Controller
             );
 
             if ($this->shouldBroadcast($request)) {
-                $this->dispatchUserPresenceEvent(
-                    $actorUserId,
-                    $validated['is_online'],
-                    $validated['is_online'] ? null : now()->toDateTimeString()
-                );
+                $threadIds = $this->getUserThreadIds($actorUserId);
+                if (!empty($threadIds)) {
+                    $channels = array_map(
+                        fn (string $id) => $this->threadChannelName($id),
+                        $threadIds
+                    );
+                    $this->dispatchUserPresenceEvent($channels, [
+                        'user_id' => $actorUserId,
+                        'is_online' => $validated['is_online'],
+                        'last_seen_at' => $validated['is_online'] ? null : now()->toDateTimeString(),
+                    ]);
+                }
             }
 
             return response()->json([
@@ -1037,6 +1062,209 @@ class ChatController extends Controller
         return true;
     }
 
+    private function canAuthorizeChannel(string $channelName, string $actorUserId): bool
+    {
+        $trimmed = trim($channelName);
+
+        if (preg_match('/^private-chat\.thread\.(.+)$/', $trimmed, $matches) === 1) {
+            return $this->isThreadParticipant($matches[1], $actorUserId);
+        }
+
+        if (preg_match('/^private-chat\.user\.(.+)$/', $trimmed, $matches) === 1) {
+            return $matches[1] === $actorUserId;
+        }
+
+        return false;
+    }
+
+    private function applyReceiptUpdate(
+        string $threadId,
+        string $actorUserId,
+        ?string $deliveredMessageId,
+        ?string $seenMessageId,
+        bool $broadcast = true
+    ): array {
+        if (!$this->isThreadParticipant($threadId, $actorUserId)) {
+            throw new \InvalidArgumentException('Not authorized for this thread');
+        }
+
+        $thread = DB::table('chat_threads')->where('id', $threadId)->first();
+        if (!$thread) {
+            throw new \InvalidArgumentException('Thread not found');
+        }
+
+        $participant = DB::table('chat_participants')
+            ->where('thread_id', $threadId)
+            ->where('user_id', $actorUserId)
+            ->first();
+
+        if (!$participant) {
+            throw new \InvalidArgumentException('Participant not found for this thread');
+        }
+
+        $currentDeliveredSortKey = $this->sortKeyForMessageId($participant->last_delivered_message_id);
+        $currentSeenSortKey = $this->sortKeyForMessageId($participant->last_read_message_id);
+
+        $nextDelivered = $this->resolveReceiptCursor($threadId, $deliveredMessageId, $currentDeliveredSortKey);
+        $nextSeen = $this->resolveReceiptCursor($threadId, $seenMessageId, $currentSeenSortKey);
+
+        if ($nextSeen !== null && ($nextDelivered === null || $nextSeen->sort_key > $nextDelivered->sort_key)) {
+            $nextDelivered = $nextSeen;
+        }
+
+        DB::transaction(function () use (
+            $thread,
+            $threadId,
+            $actorUserId,
+            $participant,
+            $currentSeenSortKey,
+            $nextDelivered,
+            $nextSeen
+        ) {
+            $updatePayload = [];
+            if ($nextDelivered !== null) {
+                $updatePayload['last_delivered_message_id'] = $nextDelivered->id;
+            }
+            if ($nextSeen !== null) {
+                $updatePayload['last_read_message_id'] = $nextSeen->id;
+            }
+            if (!empty($updatePayload)) {
+                $effectiveSeenSortKey = $nextSeen?->sort_key ?? $currentSeenSortKey;
+                $updatePayload['unread_count'] = $this->countUnreadMessages(
+                    $threadId,
+                    $actorUserId,
+                    $effectiveSeenSortKey
+                );
+
+                DB::table('chat_participants')
+                    ->where('id', $participant->id)
+                    ->update($updatePayload);
+            }
+
+            if ($thread->type === 'direct') {
+                if ($nextDelivered !== null) {
+                    DB::table('chat_messages')
+                        ->where('thread_id', $threadId)
+                        ->where('sender_id', '!=', $actorUserId)
+                        ->where('sort_key', '<=', $nextDelivered->sort_key)
+                        ->whereNull('delivered_at')
+                        ->update([
+                            'delivered_at' => now(),
+                        ]);
+                }
+
+                if ($nextSeen !== null) {
+                    $seenQuery = DB::table('chat_messages')
+                        ->where('thread_id', $threadId)
+                        ->where('sender_id', '!=', $actorUserId)
+                        ->where('sort_key', '<=', $nextSeen->sort_key);
+
+                    (clone $seenQuery)
+                        ->whereNull('delivered_at')
+                        ->update([
+                            'delivered_at' => now(),
+                        ]);
+
+                    (clone $seenQuery)
+                        ->whereNull('seen_at')
+                        ->update([
+                            'seen_at' => now(),
+                        ]);
+                }
+            }
+        });
+
+        $participantUserIds = $this->getThreadParticipants($threadId);
+        $this->invalidateThreadListCaches($participantUserIds);
+
+        $payload = [
+            'thread_id' => $threadId,
+            'by_user_id' => $actorUserId,
+            'delivered_message_id' => $nextDelivered->id ?? $participant->last_delivered_message_id,
+            'delivered_sort_key' => $nextDelivered->sort_key ?? $currentDeliveredSortKey,
+            'seen_message_id' => $nextSeen->id ?? $participant->last_read_message_id,
+            'seen_sort_key' => $nextSeen->sort_key ?? $currentSeenSortKey,
+        ];
+
+        if ($broadcast) {
+            $this->dispatchChatThreadEvent(
+                [$this->threadChannelName($threadId)],
+                'receipt.updated',
+                $payload
+            );
+            $this->broadcastThreadState($threadId);
+        }
+
+        return $payload;
+    }
+
+    private function resolveReceiptCursor(string $threadId, ?string $messageId, ?int $currentSortKey): ?object
+    {
+        if ($messageId === null || trim($messageId) === '') {
+            return null;
+        }
+
+        $message = DB::table('chat_messages')
+            ->where('id', trim($messageId))
+            ->where('thread_id', $threadId)
+            ->select('id', 'thread_id', 'sort_key')
+            ->first();
+
+        if (!$message) {
+            throw new \InvalidArgumentException('Receipt cursor does not belong to this thread');
+        }
+
+        if ($currentSortKey !== null && $message->sort_key <= $currentSortKey) {
+            return null;
+        }
+
+        return $message;
+    }
+
+    private function countUnreadMessages(string $threadId, string $actorUserId, ?int $seenSortKey): int
+    {
+        $query = DB::table('chat_messages')
+            ->where('thread_id', $threadId)
+            ->where('sender_id', '!=', $actorUserId);
+
+        if ($seenSortKey !== null) {
+            $query->where('sort_key', '>', $seenSortKey);
+        }
+
+        return (int) $query->count();
+    }
+
+    private function hasEarlierMessages(string $threadId, Collection $messages): bool
+    {
+        $firstSortKey = $messages->first()->sort_key ?? null;
+        if ($firstSortKey === null) {
+            return false;
+        }
+
+        return DB::table('chat_messages')
+            ->where('thread_id', $threadId)
+            ->where('sort_key', '<', $firstSortKey)
+            ->exists();
+    }
+
+    private function nextSortKey(): int
+    {
+        return (int) floor(microtime(true) * 1000000);
+    }
+
+    private function sortKeyForMessageId(?string $messageId): ?int
+    {
+        if ($messageId === null || trim($messageId) === '') {
+            return null;
+        }
+
+        $sortKey = DB::table('chat_messages')
+            ->where('id', trim($messageId))
+            ->value('sort_key');
+
+        return $sortKey !== null ? (int) $sortKey : null;
+    }
+
     private function hasClientMessageIdColumn(): bool
     {
         if ($this->hasClientMessageIdColumn !== null) {
@@ -1063,6 +1291,7 @@ class ChatController extends Controller
             return [];
         }
 
+        sort($ids);
         $cacheKey = 'chat:user-names:' . md5(json_encode($ids));
         return Cache::remember($cacheKey, now()->addMinutes(5), function () use ($ids) {
             return DB::table('users')
@@ -1072,6 +1301,21 @@ class ChatController extends Controller
                 ->keyBy('id')
                 ->toArray();
         });
+    }
+
+    private function fetchPresencesByUserIds(array $userIds): array
+    {
+        $ids = array_values(array_filter(array_unique($userIds)));
+        if (empty($ids)) {
+            return [];
+        }
+
+        return DB::table('user_presences')
+            ->whereIn('user_id', $ids)
+            ->select('user_id', 'is_online', 'last_seen_at')
+            ->get()
+            ->keyBy('user_id')
+            ->toArray();
     }
 
     private function getThreadParticipants(string $threadId): array
@@ -1084,6 +1328,28 @@ class ChatController extends Controller
                 ->values()
                 ->all();
         });
+    }
+
+    private function getThreadParticipantRows(string $threadId): Collection
+    {
+        return DB::table('chat_participants')
+            ->where('thread_id', $threadId)
+            ->get([
+                'thread_id',
+                'user_id',
+                'last_delivered_message_id',
+                'last_read_message_id',
+                'unread_count',
+            ]);
+    }
+
+    private function getUserThreadIds(string $userId): array
+    {
+        return DB::table('chat_participants')
+            ->where('user_id', $userId)
+            ->pluck('thread_id')
+            ->values()
+            ->all();
     }
 
     private function threadListCacheKey(string $userId, string $role): string
@@ -1112,75 +1378,279 @@ class ChatController extends Controller
         return in_array($raw, ['1', 'true', 'yes', 'on'], true);
     }
 
-    private function dispatchChatThreadEvent(string $threadId, string $eventType, array $payload = []): void
+    private function toNullableInt(mixed $value): ?int
     {
-        try {
-            event(new ChatThreadEvent($threadId, $eventType, $payload));
-        } catch (\Throwable $e) {
-            Log::warning('Chat thread broadcast dispatch failed', [
-                'thread_id' => $threadId,
-                'event_type' => $eventType,
-                'error' => $e->getMessage(),
-            ]);
+        if ($value === null || $value === '') {
+            return null;
         }
+
+        return is_numeric($value) ? (int) $value : null;
     }
 
-    private function dispatchUserPresenceEvent(string $userId, bool $isOnline, ?string $lastSeenAt): void
+    /**
+     * @param  string[]  $channels
+     * @param  array<string, mixed>  $payload
+     */
+    private function dispatchChatThreadEvent(array $channels, string $eventName, array $payload = []): void
     {
         try {
-            event(new UserPresenceEvent($userId, $isOnline, $lastSeenAt));
+            event(new ChatThreadEvent($channels, $eventName, $payload));
         } catch (\Throwable $e) {
-            Log::warning('Presence broadcast dispatch failed', [
-                'user_id' => $userId,
-                'is_online' => $isOnline,
+            Log::warning('Chat realtime broadcast dispatch failed', [
+                'channels' => $channels,
+                'event_name' => $eventName,
                 'error' => $e->getMessage(),
             ]);
         }
     }
 
     /**
+     * @param  string[]  $channels
+     * @param  array<string, mixed>  $payload
+     */
+    private function dispatchUserPresenceEvent(array $channels, array $payload = []): void
+    {
+        try {
+            event(new UserPresenceEvent($channels, $payload));
+        } catch (\Throwable $e) {
+            Log::warning('Presence broadcast dispatch failed', [
+                'channels' => $channels,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function threadChannelName(string $threadId): string
+    {
+        return 'chat.thread.' . $threadId;
+    }
+
+    private function userChannelName(string $userId): string
+    {
+        return 'chat.user.' . $userId;
+    }
+
+    private function broadcastThreadState(string $threadId): void
+    {
+        $participantUserIds = $this->getThreadParticipants($threadId);
+        foreach ($participantUserIds as $participantUserId) {
+            $payload = $this->buildThreadPayload($threadId, (string) $participantUserId);
+            if ($payload === null) {
+                continue;
+            }
+
+            $this->dispatchChatThreadEvent(
+                [$this->userChannelName((string) $participantUserId)],
+                'thread.updated',
+                [
+                    'thread' => $payload,
+                ]
+            );
+        }
+    }
+
+    private function enrichThreads(Collection $threads, string $viewerUserId): array
+    {
+        if ($threads->isEmpty()) {
+            return [];
+        }
+
+        $threadIds = $threads->pluck('id')->values()->all();
+        $directThreadIds = $threads->where('type', 'direct')->pluck('id')->values()->all();
+
+        $counterpartsByThread = collect();
+        if (!empty($directThreadIds)) {
+            $counterpartsByThread = DB::table('chat_participants as cp')
+                ->whereIn('cp.thread_id', $directThreadIds)
+                ->where('cp.user_id', '!=', $viewerUserId)
+                ->select('cp.thread_id', 'cp.user_id as counterpart_user_id')
+                ->get()
+                ->keyBy('thread_id');
+        }
+
+        $latestMessagesByThread = [];
+        $latestMessages = DB::table('chat_messages')
+            ->whereIn('thread_id', $threadIds)
+            ->orderByDesc('sort_key')
+            ->orderByDesc('id')
+            ->get([
+                'id',
+                'thread_id',
+                'sender_id',
+                'body',
+                'sort_key',
+                'created_at',
+            ]);
+
+        foreach ($latestMessages as $latestMessage) {
+            if (!isset($latestMessagesByThread[$latestMessage->thread_id])) {
+                $latestMessagesByThread[$latestMessage->thread_id] = $latestMessage;
+            }
+        }
+
+        $counterpartUserIds = $counterpartsByThread
+            ->pluck('counterpart_user_id')
+            ->filter()
+            ->values()
+            ->all();
+        $names = $this->fetchUsersByIds($counterpartUserIds);
+        $presences = $this->fetchPresencesByUserIds($counterpartUserIds);
+
+        return $threads->map(function ($thread) use ($counterpartsByThread, $latestMessagesByThread, $names, $presences) {
+            $latestMessage = $latestMessagesByThread[$thread->id] ?? null;
+
+            $thread->last_message_body = $latestMessage->body ?? null;
+            $thread->last_message_id = $latestMessage->id ?? null;
+            $thread->last_message_sender_id = $latestMessage->sender_id ?? null;
+            $thread->last_message_sort_key = $latestMessage ? (int) $latestMessage->sort_key : null;
+
+            if ($thread->type === 'direct') {
+                $counterpart = $counterpartsByThread->get($thread->id);
+                $counterpartUserId = $counterpart->counterpart_user_id ?? null;
+                $counterpartName = $counterpartUserId ? ($names[$counterpartUserId]->name ?? null) : null;
+                $presence = $counterpartUserId ? ($presences[$counterpartUserId] ?? null) : null;
+
+                $thread->counterpart_user_id = $counterpartUserId;
+                $thread->counterpart_name = $counterpartName;
+                $thread->counterpart_is_online = $presence ? (bool) $presence->is_online : false;
+                $thread->counterpart_last_seen_at = $presence->last_seen_at ?? null;
+
+                if (!empty($counterpartName)) {
+                    $thread->title = $counterpartName;
+                }
+            }
+
+            return (array) $thread;
+        })->values()->all();
+    }
+
+    private function buildThreadPayload(string $threadId, string $viewerUserId): ?array
+    {
+        $thread = DB::table('chat_threads')->where('id', $threadId)->first();
+        if (!$thread) {
+            return null;
+        }
+
+        $participant = DB::table('chat_participants')
+            ->where('thread_id', $threadId)
+            ->where('user_id', $viewerUserId)
+            ->first();
+        if (!$participant) {
+            return null;
+        }
+
+        $collection = collect([
+            (object) [
+                'id' => $thread->id,
+                'type' => $thread->type,
+                'title' => $thread->title,
+                'created_by' => $thread->created_by,
+                'target_user_id' => $thread->target_user_id,
+                'target_role' => $thread->target_role,
+                'last_message_at' => $thread->last_message_at,
+                'unread_count' => $participant->unread_count,
+                'last_delivered_message_id' => $participant->last_delivered_message_id,
+                'last_read_message_id' => $participant->last_read_message_id,
+            ],
+        ]);
+
+        return $this->enrichThreads($collection, $viewerUserId)[0] ?? null;
+    }
+
+    /**
      * Enrich a collection of messages with sender/receiver display fields.
      */
-    private function enrichMessages($messages, ?object $thread, string $viewerUserId)
+    private function enrichMessages(Collection $messages, ?object $thread, string $viewerUserId): Collection
     {
         if (!$thread || $messages->isEmpty()) {
             return $messages;
         }
 
-        $senderIds = $messages->pluck('sender_id')->unique()->values()->all();
         $participants = $this->getThreadParticipants($thread->id);
-
+        $participantRows = $this->getThreadParticipantRows($thread->id)->keyBy('user_id');
+        $senderIds = $messages->pluck('sender_id')->unique()->values()->all();
         $userIds = collect(array_merge($senderIds, $participants))->unique()->values()->all();
         $usersById = collect($this->fetchUsersByIds($userIds));
+        $counterpartReceiptState = $this->directReceiptStateForViewer($thread, $viewerUserId, $participantRows);
 
-        return $messages->map(function ($message) use ($thread, $usersById, $participants, $viewerUserId) {
-            return $this->enrichMessageWithLookups($message, $thread, $viewerUserId, $usersById, $participants);
+        return $messages->map(function ($message) use ($thread, $usersById, $participants, $viewerUserId, $counterpartReceiptState) {
+            return $this->enrichMessageWithLookups(
+                $message,
+                $thread,
+                $viewerUserId,
+                $usersById,
+                $participants,
+                $counterpartReceiptState
+            );
         });
     }
 
     /**
      * Enrich a single message with sender/receiver display fields.
      */
-    private function enrichMessage(?object $message, ?object $thread, string $viewerUserId)
+    private function enrichMessage(?object $message, ?object $thread, string $viewerUserId): ?object
     {
         if (!$message || !$thread) {
             return $message;
         }
 
         $participants = $this->getThreadParticipants($thread->id);
-
+        $participantRows = $this->getThreadParticipantRows($thread->id)->keyBy('user_id');
         $userIds = collect(array_merge([$message->sender_id], $participants))->unique()->values()->all();
         $usersById = collect($this->fetchUsersByIds($userIds));
+        $counterpartReceiptState = $this->directReceiptStateForViewer($thread, $viewerUserId, $participantRows);
 
-        return $this->enrichMessageWithLookups($message, $thread, $viewerUserId, $usersById, $participants);
+        return $this->enrichMessageWithLookups(
+            $message,
+            $thread,
+            $viewerUserId,
+            $usersById,
+            $participants,
+            $counterpartReceiptState
+        );
+    }
+
+    private function loadEnrichedMessage(string $messageId, ?object $thread, string $viewerUserId): ?object
+    {
+        $message = DB::table('chat_messages')->where('id', $messageId)->first();
+        if (!$message) {
+            return null;
+        }
+
+        $message->reactions = DB::table('chat_message_reactions')
+            ->where('message_id', $messageId)
+            ->orderBy('created_at')
+            ->get();
+
+        return $this->enrichMessage($message, $thread, $viewerUserId);
+    }
+
+    private function directReceiptStateForViewer(?object $thread, string $viewerUserId, Collection $participantRows): array
+    {
+        if (!$thread || $thread->type !== 'direct') {
+            return [
+                'delivered_sort_key' => null,
+                'seen_sort_key' => null,
+            ];
+        }
+
+        $counterpart = $participantRows->first(function ($participant) use ($viewerUserId) {
+            return $participant->user_id !== $viewerUserId;
+        });
+
+        return [
+            'delivered_sort_key' => $this->sortKeyForMessageId($counterpart->last_delivered_message_id ?? null),
+            'seen_sort_key' => $this->sortKeyForMessageId($counterpart->last_read_message_id ?? null),
+        ];
     }
 
     private function enrichMessageWithLookups(
         object $message,
         object $thread,
         string $viewerUserId,
-        $usersById,
-        array $participants
+        Collection $usersById,
+        array $participants,
+        array $counterpartReceiptState
     ): object {
         $message->sender_name = $usersById->get($message->sender_id)->name ?? null;
 
@@ -1198,9 +1668,20 @@ class ChatController extends Controller
         $message->receiver_name = $receiverId
             ? ($usersById->get($receiverId)->name ?? null)
             : null;
-
-        $message->viewer_user_id = $viewerUserId;
         $message->thread_type = $thread->type ?? null;
+        $message->status = 'sent';
+
+        if ($thread->type === 'direct' && $message->sender_id === $viewerUserId) {
+            $messageSortKey = isset($message->sort_key) ? (int) $message->sort_key : null;
+            $seenSortKey = $counterpartReceiptState['seen_sort_key'];
+            $deliveredSortKey = $counterpartReceiptState['delivered_sort_key'];
+
+            if ($messageSortKey !== null && $seenSortKey !== null && $messageSortKey <= $seenSortKey) {
+                $message->status = 'seen';
+            } elseif ($messageSortKey !== null && $deliveredSortKey !== null && $messageSortKey <= $deliveredSortKey) {
+                $message->status = 'delivered';
+            }
+        }
 
         return $message;
     }

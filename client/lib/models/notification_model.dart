@@ -11,6 +11,32 @@ class NotificationModel {
   final bool isRead;
   final DateTime createdAt;
 
+  static DateTime _parseApiTime(dynamic raw) {
+    final source = raw?.toString().trim() ?? '';
+    if (source.isEmpty) return DateTime.now();
+
+    final parsed = DateTime.tryParse(source);
+    if (parsed == null) return DateTime.now();
+
+    // Backend often returns naive UTC timestamps (without Z/offset).
+    final hasExplicitTimezone = RegExp(r'(Z|[+\-]\d{2}:?\d{2})$', caseSensitive: false)
+        .hasMatch(source);
+    if (!hasExplicitTimezone && !parsed.isUtc) {
+      return DateTime.utc(
+        parsed.year,
+        parsed.month,
+        parsed.day,
+        parsed.hour,
+        parsed.minute,
+        parsed.second,
+        parsed.millisecond,
+        parsed.microsecond,
+      ).toLocal();
+    }
+
+    return parsed.isUtc ? parsed.toLocal() : parsed;
+  }
+
   NotificationModel({
     required this.id,
     required this.employeeId,
@@ -41,10 +67,7 @@ class NotificationModel {
       isRead: json['is_read'] == 1 ||
           json['is_read'] == true ||
           json['is_read']?.toString() == 'true',
-      createdAt: DateTime.tryParse(
-            json['created_at']?.toString() ?? '',
-          ) ??
-          DateTime.now(),
+      createdAt: _parseApiTime(json['created_at']),
     );
   }
 }

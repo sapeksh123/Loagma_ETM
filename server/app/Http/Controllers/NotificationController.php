@@ -6,11 +6,14 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class NotificationController extends Controller
 {
+    private array $columnExistsCache = [];
+
     /**
      * List notifications for a given employee.
      */
@@ -87,150 +90,188 @@ class NotificationController extends Controller
 
             $title = $task->title ?? 'Task update';
 
-            // Ensure a chat thread exists between task creator (as admin) and employee.
+            // Best effort: create chat linkage when chat schema is available.
+            // Notification creation itself should never fail because of chat linkage.
             $adminId = $task->created_by ?? null;
             $threadId = null;
             $messageId = null;
 
             if ($adminId) {
-                // Ensure the admin user exists to satisfy FK constraints on chat tables.
-                $adminUser = DB::table('users')->where('id', $adminId)->first();
-                if (!$adminUser) {
-                    DB::table('users')->insert([
-                        'id' => $adminId,
-                        'contactNumber' => $adminId,
-                        'name' => 'User ' . $adminId,
-                    ]);
-                }
-
-                // Try to find existing direct thread.
-                if ($adminId === $validated['employee_id']) {
-                    // Self-thread: look for any direct thread where this user is a participant.
-                    $existingThread = DB::table('chat_threads as t')
-                        ->join('chat_participants as cp', 'cp.thread_id', '=', 't.id')
-                        ->where('t.type', 'direct')
-                        ->where('cp.user_id', $adminId)
-                        ->select('t.*')
-                        ->first();
-                } else {
-                    // Standard direct thread between two distinct users.
-                    $existingThread = DB::table('chat_threads as t')
-                        ->join('chat_participants as cp1', 'cp1.thread_id', '=', 't.id')
-                        ->join('chat_participants as cp2', 'cp2.thread_id', '=', 't.id')
-                        ->where('t.type', 'direct')
-                        ->where('cp1.user_id', $adminId)
-                        ->where('cp2.user_id', $validated['employee_id'])
-                        ->select('t.*')
-                        ->first();
-                }
-
-                if ($existingThread) {
-                    $threadId = $existingThread->id;
-                } else {
-                    $threadId = Str::uuid()->toString();
-                    DB::table('chat_threads')->insert([
-                        'id' => $threadId,
-                        'type' => 'direct',
-                        'created_by' => $adminId,
-                        'target_user_id' => $validated['employee_id'],
-                        'target_role' => null,
-                        'title' => $title,
-                        'last_message_at' => null,
-                    ]);
-
-                    // Create participants. If admin and employee are the same user,
-                    // only create one participant to satisfy the unique (thread_id, user_id) constraint.
-                    if ($adminId === $validated['employee_id']) {
-                        DB::table('chat_participants')->insert([
-                            [
-                                'id' => Str::uuid()->toString(),
-                                'thread_id' => $threadId,
-                                'user_id' => $adminId,
-                                'last_read_message_id' => null,
-                                'unread_count' => 0,
-                            ],
-                        ]);
-                    } else {
-                        DB::table('chat_participants')->insert([
-                            [
-                                'id' => Str::uuid()->toString(),
-                                'thread_id' => $threadId,
-                                'user_id' => $adminId,
-                                'last_read_message_id' => null,
-                                'unread_count' => 0,
-                            ],
-                            [
-                                'id' => Str::uuid()->toString(),
-                                'thread_id' => $threadId,
-                                'user_id' => $validated['employee_id'],
-                                'last_read_message_id' => null,
-                                'unread_count' => 0,
-                            ],
-                        ]);
+                try {
+                    // If the creator user is missing, skip chat linkage instead of
+                    // writing partial user data and causing schema-level failures.
+                    $adminUser = DB::table('users')->where('id', $adminId)->first();
+                    if (!$adminUser) {
+                        throw new \RuntimeException('Task creator user not found for chat linkage');
                     }
-                }
 
-                // Create a chat message representing this reminder.
-                $messageId = Str::uuid()->toString();
+                    // Try to find existing direct thread.
+                    if ($adminId === $validated['employee_id']) {
+                        // Self-thread: look for any direct thread where this user is a participant.
+                        $existingThread = DB::table('chat_threads as t')
+                            ->join('chat_participants as cp', 'cp.thread_id', '=', 't.id')
+                            ->where('t.type', 'direct')
+                            ->where('cp.user_id', $adminId)
+                            ->select('t.*')
+                            ->first();
+                    } else {
+                        // Standard direct thread between two distinct users.
+                        $existingThread = DB::table('chat_threads as t')
+                            ->join('chat_participants as cp1', 'cp1.thread_id', '=', 't.id')
+                            ->join('chat_participants as cp2', 'cp2.thread_id', '=', 't.id')
+                            ->where('t.type', 'direct')
+                            ->where('cp1.user_id', $adminId)
+                            ->where('cp2.user_id', $validated['employee_id'])
+                            ->select('t.*')
+                            ->first();
+                    }
 
-                DB::table('chat_messages')->insert([
-                    'id' => $messageId,
-                    'thread_id' => $threadId,
-                    'sender_id' => $adminId,
-                    'sender_role' => $validated['sender_role'],
-                    'body' => $validated['message'],
-                    'task_id' => $validated['task_id'],
-                    'subtask_index' => $validated['subtask_index'] ?? null,
-                ]);
-
-                // Mark admin as having read this message and increment unread for employee.
-                $adminParticipant = DB::table('chat_participants')
-                    ->where('thread_id', $threadId)
-                    ->where('user_id', $adminId)
-                    ->first();
-                if ($adminParticipant) {
-                    DB::table('chat_participants')
-                        ->where('id', $adminParticipant->id)
-                        ->update([
-                            'last_read_message_id' => $messageId,
+                    if ($existingThread) {
+                        $threadId = $existingThread->id;
+                    } else {
+                        $threadId = Str::uuid()->toString();
+                        DB::table('chat_threads')->insert([
+                            'id' => $threadId,
+                            'type' => 'direct',
+                            'created_by' => $adminId,
+                            'target_user_id' => $validated['employee_id'],
+                            'target_role' => null,
+                            'title' => $title,
+                            'last_message_at' => null,
                         ]);
-                }
 
-                // For self-threads (admin == employee), there is only one participant
-                // so we keep unread_count at 0. For normal threads, bump unread for employee.
-                if ($adminId !== $validated['employee_id']) {
-                    $employeeParticipant = DB::table('chat_participants')
+                        // Create participants. If admin and employee are the same user,
+                        // only create one participant to satisfy the unique (thread_id, user_id) constraint.
+                        if ($adminId === $validated['employee_id']) {
+                            DB::table('chat_participants')->insert([
+                                [
+                                    'id' => Str::uuid()->toString(),
+                                    'thread_id' => $threadId,
+                                    'user_id' => $adminId,
+                                    'last_read_message_id' => null,
+                                    'unread_count' => 0,
+                                ],
+                            ]);
+                        } else {
+                            DB::table('chat_participants')->insert([
+                                [
+                                    'id' => Str::uuid()->toString(),
+                                    'thread_id' => $threadId,
+                                    'user_id' => $adminId,
+                                    'last_read_message_id' => null,
+                                    'unread_count' => 0,
+                                ],
+                                [
+                                    'id' => Str::uuid()->toString(),
+                                    'thread_id' => $threadId,
+                                    'user_id' => $validated['employee_id'],
+                                    'last_read_message_id' => null,
+                                    'unread_count' => 0,
+                                ],
+                            ]);
+                        }
+                    }
+
+                    // Create a chat message representing this reminder.
+                    $messageId = Str::uuid()->toString();
+                    $chatMessagePayload = [
+                        'id' => $messageId,
+                        'thread_id' => $threadId,
+                        'sender_id' => $adminId,
+                        'sender_role' => $validated['sender_role'],
+                        'body' => $validated['message'],
+                        'task_id' => $validated['task_id'],
+                        'subtask_index' => $validated['subtask_index'] ?? null,
+                    ];
+
+                    if ($this->hasColumn('chat_messages', 'sort_key')) {
+                        $chatMessagePayload['sort_key'] = $this->nextSortKey();
+                    }
+                    if ($this->hasColumn('chat_messages', 'sent_at')) {
+                        $chatMessagePayload['sent_at'] = now();
+                    }
+                    if ($this->hasColumn('chat_messages', 'delivered_at')) {
+                        $chatMessagePayload['delivered_at'] = null;
+                    }
+                    if ($this->hasColumn('chat_messages', 'seen_at')) {
+                        $chatMessagePayload['seen_at'] = null;
+                    }
+                    if ($this->hasColumn('chat_messages', 'edited_at')) {
+                        $chatMessagePayload['edited_at'] = null;
+                    }
+                    if ($this->hasColumn('chat_messages', 'is_deleted')) {
+                        $chatMessagePayload['is_deleted'] = false;
+                    }
+                    if ($this->hasColumn('chat_messages', 'client_message_id')) {
+                        $chatMessagePayload['client_message_id'] = null;
+                    }
+
+                    DB::table('chat_messages')->insert($chatMessagePayload);
+
+                    // Mark admin as having read this message and increment unread for employee.
+                    $adminParticipant = DB::table('chat_participants')
                         ->where('thread_id', $threadId)
-                        ->where('user_id', $validated['employee_id'])
+                        ->where('user_id', $adminId)
                         ->first();
-                    if ($employeeParticipant) {
+                    if ($adminParticipant) {
                         DB::table('chat_participants')
-                            ->where('id', $employeeParticipant->id)
+                            ->where('id', $adminParticipant->id)
                             ->update([
-                                'unread_count' => $employeeParticipant->unread_count + 1,
+                                'last_read_message_id' => $messageId,
                             ]);
                     }
-                }
 
-                DB::table('chat_threads')
-                    ->where('id', $threadId)
-                    ->update([
-                        'last_message_at' => now(),
+                    // For self-threads (admin == employee), there is only one participant
+                    // so we keep unread_count at 0. For normal threads, bump unread for employee.
+                    if ($adminId !== $validated['employee_id']) {
+                        $employeeParticipant = DB::table('chat_participants')
+                            ->where('thread_id', $threadId)
+                            ->where('user_id', $validated['employee_id'])
+                            ->first();
+                        if ($employeeParticipant) {
+                            DB::table('chat_participants')
+                                ->where('id', $employeeParticipant->id)
+                                ->update([
+                                    'unread_count' => $employeeParticipant->unread_count + 1,
+                                ]);
+                        }
+                    }
+
+                    DB::table('chat_threads')
+                        ->where('id', $threadId)
+                        ->update([
+                            'last_message_at' => now(),
+                        ]);
+                } catch (\Throwable $chatError) {
+                    Log::warning('Notification chat-link creation skipped', [
+                        'error' => $chatError->getMessage(),
+                        'employee_id' => $validated['employee_id'],
+                        'task_id' => $validated['task_id'],
                     ]);
+                    $threadId = null;
+                    $messageId = null;
+                }
             }
 
-            DB::table('notifications')->insert([
+            $notificationPayload = [
                 'id' => $id,
                 'employee_id' => $validated['employee_id'],
                 'task_id' => $validated['task_id'],
-                'chat_thread_id' => $threadId,
-                'chat_message_id' => $messageId,
                 'subtask_index' => $validated['subtask_index'] ?? null,
                 'type' => $validated['type'],
                 'title' => $title,
                 'message' => $validated['message'],
                 'is_read' => false,
-            ]);
+            ];
+
+            if ($this->hasColumn('notifications', 'chat_thread_id')) {
+                $notificationPayload['chat_thread_id'] = $threadId;
+            }
+            if ($this->hasColumn('notifications', 'chat_message_id')) {
+                $notificationPayload['chat_message_id'] = $messageId;
+            }
+
+            DB::table('notifications')->insert($notificationPayload);
 
             $notification = DB::table('notifications')->where('id', $id)->first();
 
@@ -352,6 +393,24 @@ class NotificationController extends Controller
             'Authorization' => 'key=' . $serverKey,
             'Content-Type' => 'application/json',
         ])->post('https://fcm.googleapis.com/fcm/send', $body);
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        $key = $table . '.' . $column;
+        if (!array_key_exists($key, $this->columnExistsCache)) {
+            $this->columnExistsCache[$key] = Schema::hasColumn($table, $column);
+        }
+
+        return $this->columnExistsCache[$key];
+    }
+
+    private function nextSortKey(): int
+    {
+        $maxSortKey = (int) (DB::table('chat_messages')->max('sort_key') ?? 0);
+        $nowMicros = (int) floor(microtime(true) * 1000000);
+
+        return max($maxSortKey + 1, $nowMicros);
     }
 }
 

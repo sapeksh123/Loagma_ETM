@@ -75,10 +75,10 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final List<Map<String, String>> _categories = [
     {'value': 'daily', 'label': 'Daily'},
     {'value': 'project', 'label': 'Project'},
-    {'value': 'personal', 'label': 'Personal'},
     {'value': 'monthly', 'label': 'Monthly'},
     {'value': 'quarterly', 'label': 'Quarterly'},
     {'value': 'yearly', 'label': 'Yearly'},
+    {'value': 'personal', 'label': 'Personal'},
     {'value': 'other', 'label': 'Other'},
   ];
 
