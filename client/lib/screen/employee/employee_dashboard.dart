@@ -1116,8 +1116,31 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   /// Subtask uses same status colors as task
   Color _getSubtaskStatusColor(String status) => _getStatusColor(status);
 
-  /// Shows a dialog to enter "what type of help you need". Returns the note or null if cancelled.
-  Future<String?> _showNeedHelpNoteDialog() async {
+  bool _isManagerCreatedTask(Task task) {
+    return const {'admin', 'subadmin', 'techincharge'}.contains(
+      task.normalizedCreatorRole,
+    );
+  }
+
+  bool _canEditTask(Task task) {
+    return task.createdBy == widget.userId;
+  }
+
+  bool _canDeleteTask(Task task) {
+    return _canEditTask(task);
+  }
+
+  bool _canChangeTaskStatus(Task task) {
+    if (task.createdBy == widget.userId) return true;
+    // Employee can update status when a manager-created task is assigned to them.
+    return task.assignedTo == widget.userId && _isManagerCreatedTask(task);
+  }
+
+  /// Shows a status-note dialog. Empty note is allowed, but dialog is always shown.
+  Future<String?> _showNeedHelpNoteDialog({
+    String title = 'Status Note',
+    String hint = 'Add a note for this status (optional)',
+  }) async {
     final controller = TextEditingController();
     final scaffoldContext = this.context;
     final result = await showDialog<String>(
@@ -1128,11 +1151,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
-          title: const Row(
+          title: Row(
             children: [
-              Icon(Icons.help_outline, color: Colors.red, size: 28),
-              SizedBox(width: 10),
-              Text('Need Help'),
+              const Icon(Icons.sticky_note_2_outlined, color: Colors.brown, size: 26),
+              const SizedBox(width: 10),
+              Text(title),
             ],
           ),
           content: SingleChildScrollView(
@@ -1140,12 +1163,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'What type of help do you need?',
-                  style: TextStyle(
+                Text(
+                  hint,
+                  style: const TextStyle(
                     fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1154,7 +1176,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   maxLines: 4,
                   autofocus: true,
                   decoration: InputDecoration(
-                    hintText: 'E.g. clarification, tools, access, guidance...',
+                    hintText: 'Type note here...',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -1173,19 +1195,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ElevatedButton(
               onPressed: () {
                 final note = controller.text.trim();
-                if (note.isEmpty) {
-                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                    const SnackBar(
-                      content: Text('Please describe what help you need'),
-                      backgroundColor: Colors.orange,
-                    ),
-                  );
-                  return;
-                }
                 Navigator.pop(ctx, note);
               },
               style: ElevatedButton.styleFrom(backgroundColor: _gold),
-              child: const Text('Submit'),
+              child: const Text('Save'),
             ),
           ],
         );
@@ -1221,9 +1234,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }).toList();
     try {
       if (newStatus == 'need_help') {
-        await TaskService.updateTaskStatus(task.id, 'need_help');
+        await TaskService.updateTaskStatus(
+          task.id,
+          'need_help',
+          userId: widget.userId,
+          userRole: widget.userRole,
+        );
       }
-      await TaskService.updateTask(task.id, {'subtasks': updated});
+      await TaskService.updateTask(
+        task.id,
+        {'subtasks': updated},
+        widget.userId,
+        widget.userRole,
+      );
       if (!mounted) return;
       _fetchTasks();
     } catch (e) {
@@ -1372,7 +1395,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: () => _openStatusChange(task),
+                        onTap: _canChangeTaskStatus(task)
+                            ? () => _openStatusChange(task)
+                            : null,
                         borderRadius: BorderRadius.circular(20),
                         child: Container(
                           padding: const EdgeInsets.all(6),
@@ -1387,7 +1412,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           child: Icon(
                             Icons.flag,
                             size: 16,
-                            color: statusColor,
+                            color: _canChangeTaskStatus(task)
+                                ? statusColor
+                                : statusColor.withValues(alpha: 0.5),
                           ),
                         ),
                       ),
@@ -1463,28 +1490,27 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                   Material(
                                     color: Colors.transparent,
                                     child: InkWell(
-                                      onTap: () => _showSubtaskStatusPicker(
-                                        context: context,
-                                        currentStatus: st.status,
-                                        onSelected: (s) async {
-                                          if (s == 'need_help') {
-                                            final note =
-                                                await _showNeedHelpNoteDialog();
-                                            await _updateSubtaskStatus(
-                                              task,
-                                              idx,
-                                              s,
-                                              needHelpNote: note,
-                                            );
-                                          } else {
-                                            await _updateSubtaskStatus(
-                                              task,
-                                              idx,
-                                              s,
-                                            );
-                                          }
-                                        },
-                                      ),
+                                      onTap: _canChangeTaskStatus(task)
+                                          ? () => _showSubtaskStatusPicker(
+                                              context: context,
+                                              currentStatus: st.status,
+                                              onSelected: (s) async {
+                                                final note =
+                                                    await _showNeedHelpNoteDialog(
+                                                      title: 'Status Note',
+                                                      hint:
+                                                          'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
+                                                    );
+                                                if (note == null) return;
+                                                await _updateSubtaskStatus(
+                                                  task,
+                                                  idx,
+                                                  s,
+                                                  needHelpNote: note,
+                                                );
+                                              },
+                                            )
+                                          : null,
                                       borderRadius: BorderRadius.circular(20),
                                       child: Container(
                                         padding: const EdgeInsets.all(6),
@@ -1499,7 +1525,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                         child: Icon(
                                           Icons.flag,
                                           size: 16,
-                                          color: color,
+                                          color: _canChangeTaskStatus(task)
+                                              ? color
+                                              : color.withValues(alpha: 0.5),
                                         ),
                                       ),
                                     ),
@@ -1634,7 +1662,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       ),
       builder: (context) {
         final statusColor = _getStatusColor(task.status);
-        final canEdit = task.createdBy == widget.userId;
+        final canEdit = _canEditTask(task);
+        final canChangeStatus = _canChangeTaskStatus(task);
         return Padding(
           padding: EdgeInsets.only(
             left: 16,
@@ -1734,28 +1763,27 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                               Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  onTap: () => _showSubtaskStatusPicker(
-                                    context: context,
-                                    currentStatus: st.status,
-                                    onSelected: (s) async {
-                                      if (s == 'need_help') {
-                                        final note =
-                                            await _showNeedHelpNoteDialog();
-                                        await _updateSubtaskStatus(
-                                          task,
-                                          idx,
-                                          s,
-                                          needHelpNote: note,
-                                        );
-                                      } else {
-                                        await _updateSubtaskStatus(
-                                          task,
-                                          idx,
-                                          s,
-                                        );
-                                      }
-                                    },
-                                  ),
+                                  onTap: canChangeStatus
+                                      ? () => _showSubtaskStatusPicker(
+                                          context: context,
+                                          currentStatus: st.status,
+                                          onSelected: (s) async {
+                                            final note =
+                                                await _showNeedHelpNoteDialog(
+                                                  title: 'Status Note',
+                                                  hint:
+                                                      'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
+                                                );
+                                            if (note == null) return;
+                                            await _updateSubtaskStatus(
+                                              task,
+                                              idx,
+                                              s,
+                                              needHelpNote: note,
+                                            );
+                                          },
+                                        )
+                                      : null,
                                   borderRadius: BorderRadius.circular(20),
                                   child: Container(
                                     padding: const EdgeInsets.all(8),
@@ -1770,7 +1798,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                     child: Icon(
                                       Icons.flag,
                                       size: 18,
-                                      color: color,
+                                      color: canChangeStatus
+                                          ? color
+                                          : color.withValues(alpha: 0.5),
                                     ),
                                   ),
                                 ),
@@ -1948,7 +1978,23 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: ElevatedButton.icon(
-                          onPressed: () {
+                          onPressed: canChangeStatus
+                              ? () {
+                                  Navigator.pop(context);
+                                  _openStatusChange(task);
+                                }
+                              : null,
+                          icon: const Icon(Icons.flag_outlined),
+                          label: const Text('Change Status'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ] else if (canChangeStatus) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
                             Navigator.pop(context);
                             _openStatusChange(task);
                           },
@@ -1956,20 +2002,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           label: const Text('Change Status'),
                         ),
                       ),
-                    ],
-                  ),
-                ] else ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        _openStatusChange(task);
-                      },
-                      icon: const Icon(Icons.flag_outlined),
-                      label: const Text('Change Status'),
-                    ),
-                  ),
                 ],
               ],
             ),
@@ -2003,6 +2035,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       text: task.descriptionOnly ?? '',
     );
     String taskStatus = task.status;
+    final String initialTaskStatus = task.status;
     String priority = task.priority;
     String category = task.category;
     DateTime? deadlineDate = task.deadlineDate != null
@@ -2245,16 +2278,21 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                       context: context,
                                       currentStatus: e.status,
                                       onSelected: (s) async {
-                                        if (s == 'need_help') {
-                                          final note =
-                                              await _showNeedHelpNoteDialog();
-                                          if (note != null && note.isNotEmpty) {
-                                            await TaskService.updateTaskStatus(
-                                              task.id,
-                                              'need_help',
-                                              needHelpNote: note,
+                                        final note =
+                                            await _showNeedHelpNoteDialog(
+                                              title: 'Status Note',
+                                              hint:
+                                                  'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
                                             );
-                                          }
+                                        if (note == null) return;
+                                        if (s == 'need_help') {
+                                          await TaskService.updateTaskStatus(
+                                            task.id,
+                                            'need_help',
+                                            needHelpNote: note,
+                                            userId: widget.userId,
+                                            userRole: widget.userRole,
+                                          );
                                         }
                                         setModalState(() => e.status = s);
                                       },
@@ -2332,7 +2370,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                     descriptionController.text.trim().isEmpty
                                     ? null
                                     : descriptionController.text.trim(),
-                                'status': taskStatus,
                                 'priority': priority,
                                 'category': category,
                                 'subtasks': subtasksPayload.isEmpty
@@ -2350,9 +2387,27 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
                               }
                               try {
+                                if (taskStatus != initialTaskStatus) {
+                                  final statusNote =
+                                      await _showNeedHelpNoteDialog(
+                                        title: 'Status Note',
+                                        hint:
+                                            'Add a note for status: ${taskStatus.replaceAll('_', ' ').toUpperCase()} (optional)',
+                                      );
+                                  if (statusNote == null) return;
+                                  await TaskService.updateTaskStatus(
+                                    task.id,
+                                    taskStatus,
+                                    needHelpNote: statusNote,
+                                    userId: widget.userId,
+                                    userRole: widget.userRole,
+                                  );
+                                }
                                 await TaskService.updateTask(
                                   task.id,
                                   updatedData,
+                                  widget.userId,
+                                  widget.userRole,
                                 );
                                 if (!mounted) return;
                                 for (final e in subtaskEntries) {
@@ -2393,7 +2448,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        if (task.createdBy == widget.userId)
+                        if (_canDeleteTask(task))
                           SizedBox(
                             width: double.infinity,
                             height: 44,
@@ -2444,7 +2499,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                     false;
                                 if (!confirm) return;
                                 try {
-                                  await TaskService.deleteTask(task.id);
+                                  await TaskService.deleteTask(
+                                    task.id,
+                                    widget.userId,
+                                    widget.userRole,
+                                  );
                                   if (!mounted) return;
                                   for (final e in subtaskEntries) {
                                     e.controller.dispose();
@@ -2623,50 +2682,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       height: 46,
                       child: ElevatedButton(
                         onPressed: () async {
-                          if (selectedStatus == 'need_help') {
-                            final note = await _showNeedHelpNoteDialog();
-                            if (note == null || note.isEmpty) return;
-                            if (!mounted) return;
-                            Navigator.pop(context);
-                            try {
-                              await TaskService.updateTaskStatus(
-                                task.id,
-                                'need_help',
-                                needHelpNote: note,
-                              );
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(
-                                scaffoldContext,
-                              ).showSnackBar(
-                                SnackBar(
-                                  content: const Text(
-                                    'Help request sent. Admin will be notified.',
-                                  ),
-                                  backgroundColor: Colors.green.shade700,
-                                ),
-                              );
-                              _fetchTasks();
-                            } catch (e) {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(
-                                scaffoldContext,
-                              ).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    e
-                                        .toString()
-                                        .replaceFirst('Exception: ', '')
-                                        .trim(),
-                                  ),
-                                ),
-                              );
-                            }
-                            return;
-                          }
+                          final note = await _showNeedHelpNoteDialog(
+                            title: 'Status Note',
+                            hint:
+                                'Add a note for status: ${selectedStatus.replaceAll('_', ' ').toUpperCase()} (optional)',
+                          );
+                          if (note == null) return;
                           try {
                             await TaskService.updateTaskStatus(
                               task.id,
                               selectedStatus,
+                              needHelpNote: note,
+                              userId: widget.userId,
+                              userRole: widget.userRole,
                             );
                             if (!mounted) return;
                             Navigator.pop(context);

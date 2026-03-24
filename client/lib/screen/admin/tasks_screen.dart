@@ -852,8 +852,113 @@ class _TasksScreenState extends State<TasksScreen> {
 
   Color _getSubtaskStatusColor(String status) => _getStatusColor(status);
 
+  bool _isManagerCreatedTask(Task task) {
+    return const {'admin', 'subadmin', 'techincharge'}.contains(
+      task.normalizedCreatorRole,
+    );
+  }
+
+  bool _canEditTask(Task task) {
+    return task.createdBy == widget.userId;
+  }
+
   bool _canChangeTaskStatus(Task task) {
-    return task.assignedTo == widget.userId;
+    if (_isManagerRole) {
+      // Managers can change status only for tasks they created.
+      return task.createdBy == widget.userId;
+    }
+
+    // Employees can change status on their own tasks, and on manager-created
+    // tasks assigned to them.
+    if (task.createdBy == widget.userId) return true;
+    return task.assignedTo == widget.userId && _isManagerCreatedTask(task);
+  }
+
+  Future<void> _updateTaskStatusWithOptionalNote(
+    Task task,
+    String newStatus,
+  ) async {
+    final note = await _showNeedHelpNoteDialog(
+      title: 'Status Note',
+      hint:
+          'Add a note for status: ${newStatus.replaceAll('_', ' ').toUpperCase()} (optional)',
+      allowEmpty: true,
+    );
+    // Cancel should abort status change.
+    if (note == null) return;
+
+    try {
+      await TaskService.updateTaskStatus(
+        task.id,
+        newStatus,
+        needHelpNote: note,
+        userId: widget.userId,
+        userRole: widget.userRole,
+      );
+      if (!mounted) return;
+      _fetchTasks();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showTaskStatusPicker({
+    required BuildContext context,
+    required Task task,
+  }) async {
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Task status',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: _taskStatuses.map((s) {
+                    final selected = s == task.status;
+                    final color = _getStatusColor(s);
+                    return ChoiceChip(
+                      label: Text(
+                        s.replaceAll('_', ' '),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: selected ? color : Colors.grey.shade800,
+                        ),
+                      ),
+                      selected: selected,
+                      onSelected: (_) async {
+                        Navigator.pop(ctx);
+                        await _updateTaskStatusWithOptionalNote(task, s);
+                      },
+                      selectedColor: color.withValues(alpha: 0.2),
+                      backgroundColor: Colors.grey.shade100,
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   Future<void> _updateSubtaskStatus(
@@ -877,7 +982,12 @@ class _TasksScreenState extends State<TasksScreen> {
       return map;
     }).toList();
     try {
-      await TaskService.updateTask(task.id, {'subtasks': updated});
+      await TaskService.updateTask(
+        task.id,
+        {'subtasks': updated},
+        widget.userId,
+        widget.userRole,
+      );
       if (!mounted) return;
       _fetchTasks();
     } catch (e) {
@@ -1772,7 +1882,6 @@ class _TasksScreenState extends State<TasksScreen> {
   Widget _buildTaskCard(Task task) {
     final statusColor = _getStatusColor(task.status);
     final priorityColor = _getPriorityColor(task.priority);
-    final isSelfTask = task.createdBy == task.assignedTo;
     final isSelfContextForHidden = !_isManagerRole || _viewMode == 'self';
     final categoryLabel = task.category.isNotEmpty
         ? task.category[0].toUpperCase() + task.category.substring(1)
@@ -1870,6 +1979,39 @@ class _TasksScreenState extends State<TasksScreen> {
                         ],
                       ),
                     ),
+                    if (_isManagerRole && _viewMode == 'self') ...[
+                      const SizedBox(width: 8),
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: _canChangeTaskStatus(task)
+                              ? () => _showTaskStatusPicker(
+                                  context: context,
+                                  task: task,
+                                )
+                              : null,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.15),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: statusColor,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.flag,
+                              size: 16,
+                              color: _canChangeTaskStatus(task)
+                                  ? statusColor
+                                  : statusColor.withValues(alpha: 0.5),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     if (_isManagerRole && _viewMode == 'employee') ...[
                       const SizedBox(width: 4),
                       IconButton(
@@ -1884,7 +2026,7 @@ class _TasksScreenState extends State<TasksScreen> {
                         },
                       ),
                     ],
-                    if (task.createdBy == widget.userId) ...[
+                    if (_canEditTask(task)) ...[
                       const SizedBox(width: 4),
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, size: 18),
@@ -2059,6 +2201,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                                       'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
                                                   allowEmpty: true,
                                                 );
+                                            if (note == null) return;
                                             await _updateSubtaskStatus(
                                               task,
                                               idx,
@@ -2402,18 +2545,17 @@ class _TasksScreenState extends State<TasksScreen> {
                                   'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
                               allowEmpty: true,
                             );
+                            if (note == null) return;
                             setModalState(() {
                               taskStatus = s;
                             });
-                            if (note != null && note.isNotEmpty) {
-                              await TaskService.updateTaskStatus(
-                                task.id,
-                                s,
-                                needHelpNote: note,
-                              );
-                            } else {
-                              await TaskService.updateTaskStatus(task.id, s);
-                            }
+                            await TaskService.updateTaskStatus(
+                              task.id,
+                              s,
+                              needHelpNote: note,
+                              userId: widget.userId,
+                              userRole: widget.userRole,
+                            );
                           },
                           selectedColor: color.withValues(alpha: 0.2),
                           backgroundColor: Colors.grey.shade100,
@@ -2566,7 +2708,12 @@ class _TasksScreenState extends State<TasksScreen> {
                                 '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
                           }
                           try {
-                            await TaskService.updateTask(task.id, updatedData);
+                            await TaskService.updateTask(
+                              task.id,
+                              updatedData,
+                              widget.userId,
+                              widget.userRole,
+                            );
                             if (!mounted) return;
                             Navigator.pop(ctx);
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -2636,7 +2783,7 @@ class _TasksScreenState extends State<TasksScreen> {
         false;
     if (!confirmed) return;
     try {
-      await TaskService.deleteTask(task.id);
+      await TaskService.deleteTask(task.id, widget.userId, widget.userRole);
       if (!mounted) return;
       ScaffoldMessenger.of(
         context,
@@ -2662,7 +2809,7 @@ class _TasksScreenState extends State<TasksScreen> {
       builder: (ctx) {
         final statusColor = _getStatusColor(task.status);
         final isSelfTask = task.createdBy == task.assignedTo;
-        final canEdit = task.createdBy == widget.userId;
+        final canEdit = _canEditTask(task);
         return Padding(
           padding: EdgeInsets.only(
             left: 16,
@@ -2769,6 +2916,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                                       'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
                                                   allowEmpty: true,
                                                 );
+                                            if (note == null) return;
                                             await _updateSubtaskStatus(
                                               task,
                                               idx,

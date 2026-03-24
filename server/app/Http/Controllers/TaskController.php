@@ -41,6 +41,63 @@ class TaskController extends Controller
         }
     }
 
+    private static function isManagerRole(?string $role): bool
+    {
+        return in_array($role, ['admin', 'subadmin', 'techincharge'], true);
+    }
+
+    private static function appRoleForUserId(?string $userId): string
+    {
+        if (!$userId) return 'employee';
+        $row = DB::table('users')->select('roleId')->where('id', $userId)->first();
+        if (!$row) return 'employee';
+        return self::mapRoleIdToAppRole($row->roleId ?? null);
+    }
+
+    private static function canViewTaskForActor($task, string $actorUserId, string $actorRole): bool
+    {
+        if (self::isManagerRole($actorRole)) {
+            // Managers can view employee tasks (except personal tasks not owned by actor).
+            if (($task->category ?? '') === 'personal' && (string) ($task->created_by ?? '') !== $actorUserId) {
+                return false;
+            }
+            return true;
+        }
+
+        return (string) ($task->created_by ?? '') === $actorUserId
+            || (string) ($task->assigned_to ?? '') === $actorUserId;
+    }
+
+    private static function canEditOrDeleteTaskForActor($task, string $actorUserId, string $actorRole): bool
+    {
+        // Ownership-only for edit/delete across roles.
+        return (string) ($task->created_by ?? '') === $actorUserId;
+    }
+
+    private static function canUpdateStatusForActor($task, string $actorUserId, string $actorRole): bool
+    {
+        $createdBy = (string) ($task->created_by ?? '');
+        $assignedTo = (string) ($task->assigned_to ?? '');
+
+        if (self::isManagerRole($actorRole)) {
+            // Managers can change status only on tasks they created.
+            return $createdBy === $actorUserId;
+        }
+
+        // Employees can change status on their own created tasks.
+        if ($createdBy === $actorUserId) {
+            return true;
+        }
+
+        // Exception: employee can change status on manager-created tasks assigned to them.
+        if ($assignedTo === $actorUserId) {
+            $creatorRole = self::appRoleForUserId($createdBy);
+            return self::isManagerRole($creatorRole);
+        }
+
+        return false;
+    }
+
     /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response, plus attach daily history for daily tasks. */
     private static function decodeTask($task)
     {
@@ -385,12 +442,42 @@ class TaskController extends Controller
                 'deadline_date' => 'nullable|date',
                 'deadline_time' => 'nullable',
                 'created_by' => 'required|string',
+                'user_role' => 'nullable|string',
                 'assigned_to' => 'required|string',
             ]);
+
+            $actor = self::actorFromRequest($request);
+            $actorUserId = $actor['user_id'] ?: ($validated['created_by'] ?? null);
+            $actorRole = $actor['user_role'] ?: ($validated['user_role'] ?? null);
+            $actorRole = $actorRole ? trim(strtolower($actorRole)) : self::appRoleForUserId($actorUserId);
+
+            if (!$actorUserId || !$actorRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
 
             // Ensure creator and assignee users exist to satisfy FK constraints
             $creatorId = $validated['created_by'];
             $assigneeId = $validated['assigned_to'];
+
+            if ($creatorId !== $actorUserId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Not authorized to create tasks for another creator'
+                ], 403);
+            }
+
+            if (!self::isManagerRole($actorRole)) {
+                // Employees can create only their own tasks.
+                if ($creatorId !== $actorUserId || $assigneeId !== $actorUserId) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Employees can create tasks only for themselves'
+                    ], 403);
+                }
+            }
 
             // Personal tasks are strictly self-assigned only.
             if (($validated['category'] ?? '') === 'personal' && $creatorId !== $assigneeId) {
@@ -467,15 +554,27 @@ class TaskController extends Controller
     }
 
     // Get a single task
-    public function show($id)
+    public function show(Request $request, $id)
     {
         try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
             $task = DB::table('tasks')
                 ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
                 ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
                 ->select(
                     'tasks.*',
                     'creator.name as creator_name',
+                    'creator.roleId as creator_role_id',
                     'assignee.name as assignee_name',
                     'assignee.employeeCode as assignee_code'
                 )
@@ -487,6 +586,13 @@ class TaskController extends Controller
                     'status' => 'error',
                     'message' => 'Task not found'
                 ], 404);
+            }
+
+            if (!self::canViewTaskForActor($task, $userId, $userRole)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Not authorized to view this task'
+                ], 403);
             }
 
             return response()->json([
@@ -505,6 +611,17 @@ class TaskController extends Controller
     public function update(Request $request, $id)
     {
         try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
             $task = DB::table('tasks')->where('id', $id)->first();
 
             if (!$task) {
@@ -512,6 +629,13 @@ class TaskController extends Controller
                     'status' => 'error',
                     'message' => 'Task not found'
                 ], 404);
+            }
+
+            if (!self::canEditOrDeleteTaskForActor($task, $userId, $userRole)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Not authorized to edit this task'
+                ], 403);
             }
 
             $validated = $request->validate([
@@ -598,9 +722,20 @@ class TaskController extends Controller
     }
 
     // Delete a task
-    public function destroy($id)
+    public function destroy(Request $request, $id)
     {
         try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
             $task = DB::table('tasks')->where('id', $id)->first();
 
             if (!$task) {
@@ -608,6 +743,13 @@ class TaskController extends Controller
                     'status' => 'error',
                     'message' => 'Task not found'
                 ], 404);
+            }
+
+            if (!self::canEditOrDeleteTaskForActor($task, $userId, $userRole)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Not authorized to delete this task'
+                ], 403);
             }
 
             DB::table('tasks')->where('id', $id)->delete();
@@ -628,6 +770,17 @@ class TaskController extends Controller
     public function updateStatus(Request $request, $id)
     {
         try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
             $validated = $request->validate([
                 'status' => 'required|in:assigned,in_progress,completed,paused,need_help,ignore',
                 'need_help_note' => 'nullable|string|max:2000',
@@ -640,6 +793,13 @@ class TaskController extends Controller
                     'status' => 'error',
                     'message' => 'Task not found'
                 ], 404);
+            }
+
+            if (!self::canUpdateStatusForActor($task, $userId, $userRole)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Not authorized to update status for this task'
+                ], 403);
             }
 
             $update = ['status' => $validated['status']];

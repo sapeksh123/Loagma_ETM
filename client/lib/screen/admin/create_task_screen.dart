@@ -255,6 +255,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         'deadline_date': deadlineDate?.toIso8601String().split('T')[0],
         'deadline_time': deadlineTimeStr,
         'created_by': widget.userId,
+        'user_role': widget.userRole,
         'assigned_to': assignedTo,
       };
 

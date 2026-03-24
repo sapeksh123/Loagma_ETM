@@ -26,7 +26,7 @@ class ApiConfig {
   /// --dart-define=LOCAL_API_BASE_URL=http://<your-lan-ip>:8000/api
   static const String _localNetworkBaseUrl = String.fromEnvironment(
     'LOCAL_API_BASE_URL',
-    defaultValue: 'http://192.168.1.8:8000/api',
+    defaultValue: 'http://192.168.1.9:8000/api',
   );
   static const String _localReverbHostOverride = String.fromEnvironment(
     'LOCAL_REVERB_HOST',

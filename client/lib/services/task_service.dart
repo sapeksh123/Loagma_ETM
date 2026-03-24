@@ -69,12 +69,19 @@ class TaskService {
   static Future<Map<String, dynamic>> updateTask(
     String taskId,
     Map<String, dynamic> taskData,
+    String userId,
+    String userRole,
   ) async {
     try {
+      final payload = <String, dynamic>{
+        ...taskData,
+        'user_id': userId,
+        'user_role': userRole,
+      };
       final response = await http.put(
         Uri.parse('${ApiConfig.baseUrl}/tasks/$taskId'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(taskData),
+        body: jsonEncode(payload),
       );
 
       if (response.statusCode == 200) {
@@ -92,9 +99,15 @@ class TaskService {
     String taskId,
     String status, {
     String? needHelpNote,
+    required String userId,
+    required String userRole,
   }) async {
     try {
-      final payload = <String, dynamic>{'status': status};
+      final payload = <String, dynamic>{
+        'status': status,
+        'user_id': userId,
+        'user_role': userRole,
+      };
       if (needHelpNote != null && needHelpNote.trim().isNotEmpty) {
         payload['need_help_note'] = needHelpNote.trim();
       }
@@ -115,10 +128,16 @@ class TaskService {
   }
 
   // Delete task
-  static Future<Map<String, dynamic>> deleteTask(String taskId) async {
+  static Future<Map<String, dynamic>> deleteTask(
+    String taskId,
+    String userId,
+    String userRole,
+  ) async {
     try {
+      final query =
+          '${ApiConfig.baseUrl}/tasks/$taskId?user_id=${Uri.encodeQueryComponent(userId)}&user_role=${Uri.encodeQueryComponent(userRole)}';
       final response = await http.delete(
-        Uri.parse('${ApiConfig.baseUrl}/tasks/$taskId'),
+        Uri.parse(query),
         headers: {'Content-Type': 'application/json'},
       );
 
