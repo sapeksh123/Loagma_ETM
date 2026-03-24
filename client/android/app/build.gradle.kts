@@ -35,6 +35,9 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            // Disable shrinking to avoid R8 failure on transitive SLF4J binder classes.
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }

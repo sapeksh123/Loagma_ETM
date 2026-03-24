@@ -106,8 +106,9 @@ class ChatService {
   static Future<List<ChatUser>> getChatUsers({
     required String currentUserId,
     int perPage = 100,
+    int page = 1,
   }) async {
-    final uri = Uri.parse('${ApiConfig.baseUrl}/users?per_page=$perPage&page=1');
+    final uri = Uri.parse('${ApiConfig.baseUrl}/users?per_page=$perPage&page=$page');
     final response = await _performRequest(
       request: () =>
           http.get(uri, headers: {'Content-Type': 'application/json'}),

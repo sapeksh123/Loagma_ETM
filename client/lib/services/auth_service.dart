@@ -142,13 +142,39 @@ class AuthService {
     return 'employee';
   }
 
-  static Future<List<User>> getSwitchableUsers() async {
-    final response = await ApiService.get('/users');
+  static Future<List<User>> getSwitchableUsers({
+    int page = 1,
+    int perPage = 25,
+    String search = '',
+  }) async {
+    final query = <String, String>{
+      'page': page.toString(),
+      'per_page': perPage.toString(),
+    };
+    if (search.trim().isNotEmpty) {
+      query['search'] = search.trim();
+    }
+
+    final endpoint = Uri(
+      path: '/users',
+      queryParameters: query,
+    ).toString();
+
+    final response = await ApiService.get(endpoint);
     if (response['status'] != 'success') {
       throw Exception('Unable to fetch users from server');
     }
 
-    final List<dynamic> users = response['data'] ?? [];
+    final payload = response['data'];
+    final List<dynamic> users;
+    if (payload is List) {
+      users = payload;
+    } else if (payload is Map<String, dynamic> && payload['data'] is List) {
+      users = payload['data'] as List<dynamic>;
+    } else {
+      users = [];
+    }
+
     final mapped = users
         .whereType<Map<String, dynamic>>()
         .map(
@@ -165,9 +191,7 @@ class AuthService {
         .where((u) => u.id.isNotEmpty)
         .toList();
 
-    mapped.sort(
-      (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-    );
+    mapped.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
     return mapped;
   }
 

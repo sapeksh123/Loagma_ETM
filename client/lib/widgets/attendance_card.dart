@@ -19,6 +19,8 @@ class AttendanceCard extends StatefulWidget {
 }
 
 class _AttendanceCardState extends State<AttendanceCard> {
+  static final Map<String, Map<String, dynamic>> _summaryCache = {};
+
   Map<String, dynamic>? _summary;
   bool _isLoading = true;
   bool _isActionLoading = false;
@@ -29,6 +31,11 @@ class _AttendanceCardState extends State<AttendanceCard> {
   @override
   void initState() {
     super.initState();
+    final cached = _summaryCache[widget.userId];
+    if (cached != null) {
+      _summary = Map<String, dynamic>.from(cached);
+      _isLoading = false;
+    }
     _loadSummary();
     _startTicker();
   }
@@ -61,15 +68,19 @@ class _AttendanceCardState extends State<AttendanceCard> {
   }
 
   Future<void> _loadSummary() async {
-    setState(() {
-      _isLoading = true;
-    });
+    if (_summary == null) {
+      setState(() {
+        _isLoading = true;
+      });
+    }
     try {
       final response = await AttendanceService.getToday(widget.userId);
+      final latest = Map<String, dynamic>.from(response);
       setState(() {
-        _summary = response;
+        _summary = latest;
         _isLoading = false;
       });
+      _summaryCache[widget.userId] = latest;
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -124,6 +135,9 @@ class _AttendanceCardState extends State<AttendanceCard> {
       final response = await AttendanceService.punchIn(widget.userId);
       if (response['status'] == 'success') {
         _summary = response['data'] as Map<String, dynamic>?;
+        if (_summary != null) {
+          _summaryCache[widget.userId] = Map<String, dynamic>.from(_summary!);
+        }
         _showSnack('Punched in successfully.');
       } else {
         _showSnack(
@@ -188,6 +202,9 @@ class _AttendanceCardState extends State<AttendanceCard> {
       final response = await AttendanceService.punchOut(widget.userId);
       if (response['status'] == 'success') {
         _summary = response['data'] as Map<String, dynamic>?;
+        if (_summary != null) {
+          _summaryCache[widget.userId] = Map<String, dynamic>.from(_summary!);
+        }
         _showSnack('Punched out successfully.');
       } else {
         _showSnack(
@@ -295,6 +312,9 @@ class _AttendanceCardState extends State<AttendanceCard> {
       );
       if (response['status'] == 'success') {
         _summary = response['data'] as Map<String, dynamic>?;
+        if (_summary != null) {
+          _summaryCache[widget.userId] = Map<String, dynamic>.from(_summary!);
+        }
         _showSnack(
           '${type[0].toUpperCase()}${type.substring(1)} break started.',
         );
@@ -328,6 +348,9 @@ class _AttendanceCardState extends State<AttendanceCard> {
       final response = await AttendanceService.endBreak(widget.userId);
       if (response['status'] == 'success') {
         _summary = response['data'] as Map<String, dynamic>?;
+        if (_summary != null) {
+          _summaryCache[widget.userId] = Map<String, dynamic>.from(_summary!);
+        }
         _showSnack('Break ended.');
       } else {
         _showSnack(
@@ -427,16 +450,8 @@ class _AttendanceCardState extends State<AttendanceCard> {
         borderRadius: BorderRadius.circular(20),
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: _isLoading
-              ? const SizedBox(
-                  height: 80,
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Color(0xFFceb56e)),
-                    ),
-                  ),
-                )
+          child: _isLoading && _summary == null
+              ? _buildInitialPlaceholder()
               : Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisSize: MainAxisSize.min,
@@ -604,6 +619,41 @@ class _AttendanceCardState extends State<AttendanceCard> {
                 ),
         ),
       ),
+    );
+  }
+
+  Widget _buildInitialPlaceholder() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'Loading attendance...',
+          style: TextStyle(
+            color: Colors.grey.shade600,
+            fontSize: 13,
+            height: 1.3,
+          ),
+        ),
+        const SizedBox(height: 20),
+        Row(
+          children: [
+            Expanded(child: _infoChip(Icons.login_rounded, 'Punch In', '--')),
+            const SizedBox(width: 10),
+            Expanded(child: _infoChip(Icons.timer_outlined, 'Work', '--:--:--')),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _infoChip(
+                Icons.free_breakfast_outlined,
+                'Breaks',
+                '--:--:--',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const LinearProgressIndicator(minHeight: 3),
+      ],
     );
   }
 

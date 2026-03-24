@@ -19,17 +19,29 @@ class ChatListController extends ChangeNotifier {
   final String userRole;
   final ChatRepository _repository;
 
+  static const int _usersPerPage = 30;
+  static final Map<String, List<ChatUser>> _cachedUsersByOwner = {};
+
   List<ChatThread> threads = [];
   List<ChatUser> users = [];
   bool isLoading = true;
   bool isRefreshing = false;
+  bool isLoadingMoreUsers = false;
+  bool hasMoreUsers = true;
+  int _nextUsersPage = 1;
   String? error;
 
   StreamSubscription<ChatRealtimeEvent>? _eventsSubscription;
 
   Future<void> init() async {
-    await _repository.connect(userId: userId, userRole: userRole);
-    unawaited(_repository.setPresence(userId: userId, userRole: userRole, isOnline: true));
+    final cachedUsers = _cachedUsersByOwner[userId];
+    if (cachedUsers != null && cachedUsers.isNotEmpty) {
+      users = List<ChatUser>.from(cachedUsers);
+      hasMoreUsers = cachedUsers.length >= _usersPerPage;
+      _nextUsersPage = 2;
+      isLoading = threads.isEmpty && users.isEmpty;
+      notifyListeners();
+    }
 
     final cachedThreads = await _repository.loadCachedThreads(userId);
     if (cachedThreads.isNotEmpty) {
@@ -42,26 +54,44 @@ class ChatListController extends ChangeNotifier {
         .eventsForChannel('private-chat.user.$userId')
         .listen(_handleRealtimeEvent);
 
+    unawaited(_connectRealtime());
+
     await refresh(initial: true);
+  }
+
+  Future<void> _connectRealtime() async {
+    try {
+      await _repository.connect(userId: userId, userRole: userRole);
+      await _repository.setPresence(userId: userId, userRole: userRole, isOnline: true);
+    } catch (_) {
+      // Realtime failures should not block core chat list loading.
+    }
   }
 
   Future<void> refresh({bool initial = false}) async {
     if (initial) {
-      isLoading = threads.isEmpty;
+      isLoading = threads.isEmpty && users.isEmpty;
     } else {
       isRefreshing = true;
     }
     error = null;
     notifyListeners();
 
+    final threadsFuture = _repository.refreshThreads(userId: userId, userRole: userRole);
+    final usersFuture = _loadUsersPage(page: 1);
+
     try {
-      threads = await _repository.refreshThreads(userId: userId, userRole: userRole);
+      threads = await threadsFuture;
     } catch (e) {
       error = e.toString().replaceFirst('Exception: ', '').trim();
     }
 
     try {
-      users = await _loadUsers();
+      final firstPage = await usersFuture;
+      users = firstPage;
+      _cachedUsersByOwner[userId] = List<ChatUser>.from(firstPage);
+      hasMoreUsers = firstPage.length >= _usersPerPage;
+      _nextUsersPage = 2;
     } catch (e) {
       error ??= e.toString().replaceFirst('Exception: ', '').trim();
     }
@@ -71,8 +101,41 @@ class ChatListController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<List<ChatUser>> _loadUsers() async {
-    return ChatService.getChatUsers(currentUserId: userId);
+  Future<void> loadMoreUsers() async {
+    if (isLoading || isRefreshing || isLoadingMoreUsers || !hasMoreUsers) {
+      return;
+    }
+
+    isLoadingMoreUsers = true;
+    notifyListeners();
+
+    try {
+      final nextPage = await _loadUsersPage(page: _nextUsersPage);
+      final known = users.map((u) => u.id).toSet();
+      for (final user in nextPage) {
+        if (!known.contains(user.id)) {
+          users.add(user);
+        }
+      }
+      hasMoreUsers = nextPage.length >= _usersPerPage;
+      if (nextPage.isNotEmpty) {
+        _nextUsersPage += 1;
+      }
+      _cachedUsersByOwner[userId] = List<ChatUser>.from(users.take(_usersPerPage));
+    } catch (e) {
+      error ??= e.toString().replaceFirst('Exception: ', '').trim();
+    } finally {
+      isLoadingMoreUsers = false;
+      notifyListeners();
+    }
+  }
+
+  Future<List<ChatUser>> _loadUsersPage({required int page}) async {
+    return ChatService.getChatUsers(
+      currentUserId: userId,
+      perPage: _usersPerPage,
+      page: page,
+    );
   }
 
   void _handleRealtimeEvent(ChatRealtimeEvent event) {

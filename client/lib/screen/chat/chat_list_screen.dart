@@ -21,18 +21,29 @@ class ChatListScreen extends StatefulWidget {
 
 class _ChatListScreenState extends State<ChatListScreen> {
   late final ChatListController _controller;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     _controller = ChatListController(
       userId: widget.userId,
       userRole: widget.userRole,
     )..init();
   }
 
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.pixels >= position.maxScrollExtent - 180) {
+      _controller.loadMoreUsers();
+    }
+  }
+
   @override
   void dispose() {
+    _scrollController.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -63,7 +74,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget _buildBody(BuildContext context) {
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
     if (_controller.isLoading && _controller.threads.isEmpty) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildInitialLoadingView(bottomInset);
     }
 
     if (_controller.error != null &&
@@ -87,6 +98,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
 
     return ListView(
+      controller: _scrollController,
       padding: EdgeInsets.fromLTRB(10, 10, 10, 24 + bottomInset),
       children: [
         Container(
@@ -128,7 +140,74 @@ class _ChatListScreenState extends State<ChatListScreen> {
           style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 10),
+        if (_controller.users.isEmpty && !_controller.isLoading)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text('No people found.'),
+          ),
         ..._controller.users.map((user) => _buildUserTile(context, user)),
+        if (_controller.isLoadingMoreUsers)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (_controller.hasMoreUsers && _controller.users.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Center(
+              child: TextButton.icon(
+                onPressed: _controller.loadMoreUsers,
+                icon: const Icon(Icons.expand_more),
+                label: const Text('Load more people'),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildInitialLoadingView(double bottomInset) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: EdgeInsets.fromLTRB(10, 10, 10, 24 + bottomInset),
+      children: [
+        const LinearProgressIndicator(minHeight: 2),
+        const SizedBox(height: 16),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: const Text(
+            'Loading chats...',
+            style: TextStyle(
+              color: Color.fromARGB(255, 61, 54, 127),
+              fontSize: 20,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        ...List.generate(
+          4,
+          (_) => Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Container(
+              height: 72,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8F7F3),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: const Color(0xFFE7E0D0)),
+              ),
+            ),
+          ),
+        ),
       ],
     );
   }

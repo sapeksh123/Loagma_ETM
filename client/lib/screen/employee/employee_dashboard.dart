@@ -55,8 +55,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }
 
   Future<void> _fetchTasks() async {
+    final hasExistingTasks = _tasks.isNotEmpty;
     setState(() {
-      _isLoadingTasks = true;
+      _isLoadingTasks = !hasExistingTasks;
       _tasksError = null;
     });
 
@@ -687,7 +688,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }
 
   Widget _buildTaskTab(String category) {
-    if (_isLoadingTasks) {
+    if (_isLoadingTasks && _tasks.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
     if (_tasksError != null) {
@@ -745,9 +746,15 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: tasksForCategory.length,
+        itemCount: tasksForCategory.length + (_isLoadingTasks ? 1 : 0),
         itemBuilder: (context, index) {
-          final task = tasksForCategory[index];
+          if (_isLoadingTasks && index == 0) {
+            return const Padding(
+              padding: EdgeInsets.only(bottom: 12),
+              child: LinearProgressIndicator(minHeight: 3),
+            );
+          }
+          final task = tasksForCategory[_isLoadingTasks ? index - 1 : index];
           return _buildTaskCard(task);
         },
       ),
@@ -1040,6 +1047,30 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () => _openStatusChange(task),
+                        borderRadius: BorderRadius.circular(20),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: statusColor.withValues(alpha: 0.15),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: statusColor,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.flag,
+                            size: 16,
+                            color: statusColor,
+                          ),
+                        ),
                       ),
                     ),
                   ],

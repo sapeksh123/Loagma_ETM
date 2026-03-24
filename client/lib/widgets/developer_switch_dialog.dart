@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../models/user_model.dart';
@@ -19,40 +21,82 @@ class DeveloperSwitchDialog extends StatefulWidget {
 }
 
 class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
+  static List<User> _cachedFirstPage = [];
+
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   bool _isLoading = true;
+  bool _isPageLoading = false;
   bool _isSwitching = false;
+  bool _hasMore = true;
   String? _error;
+
+  static const int _perPage = 25;
+  int _nextPage = 1;
+  String _activeQuery = '';
+  Timer? _searchDebounce;
 
   List<User> _users = [];
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    if (_cachedFirstPage.isNotEmpty) {
+      _users = List<User>.from(_cachedFirstPage);
+      _isLoading = false;
+      _nextPage = 2;
+      _hasMore = _cachedFirstPage.length >= _perPage;
+    }
+    _scrollController.addListener(_onScroll);
+    _loadFirstPage(showSpinner: _users.isEmpty);
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _scrollController.dispose();
     _searchController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final pos = _scrollController.position;
+    if (pos.pixels >= pos.maxScrollExtent - 160) {
+      _loadMore();
+    }
+  }
+
+  Future<void> _loadFirstPage({bool showSpinner = true}) async {
+    if (showSpinner) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    } else {
+      setState(() {
+        _error = null;
+      });
+    }
 
     try {
-      final users = await AuthService.getSwitchableUsers();
+      final users = await AuthService.getSwitchableUsers(
+        page: 1,
+        perPage: _perPage,
+        search: _activeQuery,
+      );
 
       if (!mounted) return;
       setState(() {
         _users = users;
+        _nextPage = 2;
+        _hasMore = users.length >= _perPage;
         _isLoading = false;
       });
+      if (_activeQuery.isEmpty) {
+        _cachedFirstPage = List<User>.from(users);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -62,14 +106,53 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
     }
   }
 
-  List<User> get _filteredUsers {
-    final query = _searchController.text.trim().toLowerCase();
-    if (query.isEmpty) return _users;
-    return _users.where((u) {
-      return u.name.toLowerCase().contains(query) ||
-          u.id.toLowerCase().contains(query) ||
-          u.phone.toLowerCase().contains(query);
-    }).toList();
+  Future<void> _loadMore() async {
+    if (_isLoading || _isPageLoading || !_hasMore) return;
+
+    setState(() {
+      _isPageLoading = true;
+      _error = null;
+    });
+
+    try {
+      final users = await AuthService.getSwitchableUsers(
+        page: _nextPage,
+        perPage: _perPage,
+        search: _activeQuery,
+      );
+      if (!mounted) return;
+      setState(() {
+        final known = _users.map((u) => u.id).toSet();
+        for (final u in users) {
+          if (!known.contains(u.id)) {
+            _users.add(u);
+          }
+        }
+        _nextPage += 1;
+        _hasMore = users.length >= _perPage;
+        _isPageLoading = false;
+      });
+      if (_activeQuery.isEmpty && _cachedFirstPage.isEmpty && _users.isNotEmpty) {
+        _cachedFirstPage = List<User>.from(_users.take(_perPage));
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '').trim();
+        _isPageLoading = false;
+      });
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 280), () {
+      if (!mounted) return;
+      final next = value.trim();
+      if (next == _activeQuery) return;
+      _activeQuery = next;
+      _loadFirstPage(showSpinner: _users.isEmpty);
+    });
   }
 
   Future<void> _switchTo(User selectedUser) async {
@@ -171,10 +254,23 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
                   children: [
                     TextField(
                       controller: _searchController,
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (value) {
+                        setState(() {});
+                        _onSearchChanged(value);
+                      },
                       decoration: InputDecoration(
                         hintText: 'Search by name, id, or phone',
                         prefixIcon: const Icon(Icons.search),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _onSearchChanged('');
+                                  setState(() {});
+                                },
+                                icon: const Icon(Icons.close),
+                              )
+                            : null,
                         isDense: true,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
@@ -188,7 +284,7 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
                     ),
                     const SizedBox(height: 8),
                     Expanded(
-                      child: _filteredUsers.isEmpty
+                      child: _users.isEmpty && !_isLoading
                           ? const Center(
                               child: Padding(
                                 padding: EdgeInsets.symmetric(vertical: 20),
@@ -196,11 +292,39 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
                               ),
                             )
                           : ListView.separated(
-                              itemCount: _filteredUsers.length,
+                              controller: _scrollController,
+                              itemCount: _users.length + (_hasMore || _isPageLoading ? 1 : 0),
                               separatorBuilder: (_, _) =>
                                   const Divider(height: 1, thickness: 0.6),
                               itemBuilder: (context, index) {
-                                final user = _filteredUsers[index];
+                                if (index >= _users.length) {
+                                  if (_isPageLoading) {
+                                    return const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 12),
+                                      child: Center(
+                                        child: SizedBox(
+                                          height: 18,
+                                          width: 18,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  if (_hasMore) {
+                                    return const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 12),
+                                      child: Center(
+                                        child: Text(
+                                          'Scroll to load more',
+                                          style: TextStyle(fontSize: 12, color: Colors.black54),
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                  return const SizedBox.shrink();
+                                }
+
+                                final user = _users[index];
                                 return ListTile(
                                   dense: true,
                                   contentPadding: EdgeInsets.zero,
