@@ -9,19 +9,18 @@ use Illuminate\Validation\ValidationException;
 
 class NoteController extends Controller
 {
+    private function actorUserId(Request $request): string
+    {
+        return trim((string) $request->attributes->get('actor_user_id', ''));
+    }
+
     /**
      * List all notes for a user (query user_id).
      */
     public function index(Request $request)
     {
         try {
-            $userId = $request->query('user_id');
-            if (!$userId) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'user_id is required',
-                ], 400);
-            }
+            $userId = $this->actorUserId($request);
 
             $notes = DB::table('notes')
                 ->where('user_id', $userId)
@@ -59,13 +58,7 @@ class NoteController extends Controller
     public function show(Request $request, string $id)
     {
         try {
-            $userId = $request->query('user_id');
-            if (!$userId) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'user_id is required',
-                ], 400);
-            }
+            $userId = $this->actorUserId($request);
 
             $note = DB::table('notes')
                 ->where('id', $id)
@@ -108,16 +101,17 @@ class NoteController extends Controller
     {
         try {
             $validated = $request->validate([
-                'user_id' => 'required|string',
                 'folder_name' => 'required|string|max:255',
                 'title' => 'required|string|max:255',
                 'content' => 'nullable|string',
             ]);
 
+            $userId = $this->actorUserId($request);
+
             $noteId = Str::uuid()->toString();
             DB::table('notes')->insert([
                 'id' => $noteId,
-                'user_id' => $validated['user_id'],
+                'user_id' => $userId,
                 'folder_name' => $validated['folder_name'],
                 'title' => $validated['title'],
                 'content' => $validated['content'] ?? null,
@@ -161,13 +155,7 @@ class NoteController extends Controller
     public function update(Request $request, string $id)
     {
         try {
-            $userId = $request->query('user_id');
-            if (!$userId) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'user_id is required',
-                ], 400);
-            }
+            $userId = $this->actorUserId($request);
 
             $validated = $request->validate([
                 'folder_name' => 'sometimes|string|max:255',
@@ -223,13 +211,7 @@ class NoteController extends Controller
     public function destroy(Request $request, string $id)
     {
         try {
-            $userId = $request->query('user_id');
-            if (!$userId) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'user_id is required',
-                ], 400);
-            }
+            $userId = $this->actorUserId($request);
 
             $deleted = DB::table('notes')
                 ->where('id', $id)
@@ -261,14 +243,7 @@ class NoteController extends Controller
     public function showMe(Request $request)
     {
         try {
-            $userId = $request->query('user_id');
-
-            if (!$userId) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'user_id is required',
-                ], 400);
-            }
+            $userId = $this->actorUserId($request);
 
             $note = DB::table('notes')->where('user_id', $userId)->first();
 
@@ -297,11 +272,10 @@ class NoteController extends Controller
     {
         try {
             $validated = $request->validate([
-                'user_id' => 'required|string',
                 'content' => 'nullable|string',
             ]);
 
-            $userId = $validated['user_id'];
+            $userId = $this->actorUserId($request);
             $content = array_key_exists('content', $validated) ? $validated['content'] : null;
 
             $existing = DB::table('notes')->where('user_id', $userId)->first();

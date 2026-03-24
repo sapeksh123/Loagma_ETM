@@ -6,14 +6,23 @@ import 'api_config.dart';
 import '../models/note_model.dart';
 
 class NoteService {
-  static Future<List<Note>> listNotes(String userId) async {
+  static Map<String, String> _headers({
+    required String userId,
+    required String userRole,
+  }) {
+    return {
+      'Content-Type': 'application/json',
+      'X-User-Id': userId,
+      'X-User-Role': userRole,
+    };
+  }
+
+  static Future<List<Note>> listNotes(String userId, String userRole) async {
     try {
-      final uri = Uri.parse(
-        '${ApiConfig.baseUrl}/notes?user_id=$userId',
-      );
+      final uri = Uri.parse('${ApiConfig.baseUrl}/notes');
       final response = await http.get(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers(userId: userId, userRole: userRole),
       );
 
       if (response.statusCode == 200) {
@@ -32,14 +41,18 @@ class NoteService {
     }
   }
 
-  static Future<Note> getNote(String userId, String noteId) async {
+  static Future<Note> getNote(
+    String userId,
+    String userRole,
+    String noteId,
+  ) async {
     try {
       final uri = Uri.parse(
-        '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}?user_id=$userId',
+        '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}',
       );
       final response = await http.get(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers(userId: userId, userRole: userRole),
       );
 
       if (response.statusCode == 200) {
@@ -61,6 +74,7 @@ class NoteService {
 
   static Future<Note> createNote(
     String userId, {
+    required String userRole,
     required String folderName,
     required String title,
     String? content,
@@ -68,14 +82,13 @@ class NoteService {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/notes');
       final payload = jsonEncode({
-        'user_id': userId,
         'folder_name': folderName,
         'title': title,
         if (content != null) 'content': content,
       });
       final response = await http.post(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers(userId: userId, userRole: userRole),
         body: payload,
       );
 
@@ -95,6 +108,7 @@ class NoteService {
 
   static Future<void> updateNote(
     String userId,
+    String userRole,
     String noteId, {
     String? folderName,
     String? title,
@@ -102,7 +116,7 @@ class NoteService {
   }) async {
     try {
       final uri = Uri.parse(
-        '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}?user_id=$userId',
+        '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}',
       );
       final payload = <String, dynamic>{};
       if (folderName != null) payload['folder_name'] = folderName;
@@ -111,7 +125,7 @@ class NoteService {
 
       final response = await http.put(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers(userId: userId, userRole: userRole),
         body: jsonEncode(payload),
       );
 
@@ -129,14 +143,18 @@ class NoteService {
     }
   }
 
-  static Future<void> deleteNote(String userId, String noteId) async {
+  static Future<void> deleteNote(
+    String userId,
+    String userRole,
+    String noteId,
+  ) async {
     try {
       final uri = Uri.parse(
-        '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}?user_id=$userId',
+        '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}',
       );
       final response = await http.delete(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers(userId: userId, userRole: userRole),
       );
 
       if (response.statusCode == 200) {
@@ -153,14 +171,12 @@ class NoteService {
     }
   }
 
-  static Future<String> getMyNote(String userId) async {
+  static Future<String> getMyNote(String userId, String userRole) async {
     try {
-      final uri = Uri.parse(
-        '${ApiConfig.baseUrl}/notes/me?user_id=$userId',
-      );
+      final uri = Uri.parse('${ApiConfig.baseUrl}/notes/me');
       final response = await http.get(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers(userId: userId, userRole: userRole),
       );
 
       if (response.statusCode == 200) {
@@ -183,16 +199,19 @@ class NoteService {
     }
   }
 
-  static Future<void> saveMyNote(String userId, String content) async {
+  static Future<void> saveMyNote(
+    String userId,
+    String userRole,
+    String content,
+  ) async {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/notes/me');
       final payload = jsonEncode({
-        'user_id': userId,
         'content': content,
       });
       final response = await http.put(
         uri,
-        headers: {'Content-Type': 'application/json'},
+        headers: _headers(userId: userId, userRole: userRole),
         body: payload,
       );
 

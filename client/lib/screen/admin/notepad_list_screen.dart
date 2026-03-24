@@ -8,12 +8,14 @@ class NotepadListScreen extends StatefulWidget {
   final String userId;
   final String userRole;
   final String? userName;
+  final bool showAppBar;
 
   const NotepadListScreen({
     super.key,
     required this.userId,
     required this.userRole,
     this.userName,
+    this.showAppBar = false,
   });
 
   @override
@@ -22,8 +24,10 @@ class NotepadListScreen extends StatefulWidget {
 
 class _NotepadListScreenState extends State<NotepadListScreen> {
   static const _gold = Color(0xFFceb56e);
+  static const _pageBg = Color(0xFFF4F1EA);
 
   List<Note> _notes = [];
+  final Map<String, bool> _expandedFolders = {};
   bool _isLoading = true;
   String? _errorMessage;
 
@@ -39,10 +43,12 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
       _errorMessage = null;
     });
     try {
-      final list = await NoteService.listNotes(widget.userId);
+      final list = await NoteService.listNotes(widget.userId, widget.userRole);
+      final grouped = _groupNotesByFolder(list);
       if (!mounted) return;
       setState(() {
         _notes = list;
+        _syncExpandedFolders(grouped);
         _isLoading = false;
       });
     } catch (e) {
@@ -54,10 +60,9 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     }
   }
 
-  /// Group notes by folder_name (empty string as "General").
-  Map<String, List<Note>> get _notesByFolder {
+  Map<String, List<Note>> _groupNotesByFolder(List<Note> notes) {
     final map = <String, List<Note>>{};
-    for (final note in _notes) {
+    for (final note in notes) {
       final folder = note.folderName.trim().isEmpty ? 'General' : note.folderName;
       map.putIfAbsent(folder, () => []).add(note);
     }
@@ -70,77 +75,211 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     return Map.fromEntries(keys.map((k) => MapEntry(k, map[k]!)));
   }
 
-  Future<void> _openAddNoteDialog() async {
-    final folderController = TextEditingController();
+  Map<String, List<Note>> get _notesByFolder => _groupNotesByFolder(_notes);
+
+  List<String> get _existingFolders => _notesByFolder.keys.toList();
+
+  void _syncExpandedFolders(Map<String, List<Note>> grouped) {
+    final folders = grouped.keys.toSet();
+    for (final folder in folders) {
+      _expandedFolders.putIfAbsent(folder, () => true);
+    }
+    final stale = _expandedFolders.keys.where((k) => !folders.contains(k)).toList();
+    for (final key in stale) {
+      _expandedFolders.remove(key);
+    }
+  }
+
+  Future<void> _openAddNoteDialog({
+    String? initialFolder,
+    bool lockFolder = false,
+  }) async {
+    final availableFolders = _existingFolders;
+    final bootstrapMode = availableFolders.isEmpty;
+    final canCreateFolder = !lockFolder;
+
+    String selectedFolder;
+    if (bootstrapMode) {
+      selectedFolder = 'General';
+    } else if (initialFolder != null && availableFolders.contains(initialFolder)) {
+      selectedFolder = initialFolder;
+    } else {
+      selectedFolder = availableFolders.first;
+    }
+
     final titleController = TextEditingController();
+    final newFolderController = TextEditingController();
+    String folderNameToCreate = selectedFolder;
 
     final result = await showDialog<bool>(
       context: context,
       builder: (ctx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: const Text('Add new note'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                TextField(
-                  controller: folderController,
-                  decoration: const InputDecoration(
-                    labelText: 'Folder / Category',
-                    hintText: 'e.g. Work, Personal',
-                    border: OutlineInputBorder(),
-                  ),
-                  textCapitalization: TextCapitalization.words,
+        String? localError;
+        bool createNewFolder = false;
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Text('Create note'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (bootstrapMode)
+                      Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: _gold.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: _gold.withValues(alpha: 0.35)),
+                        ),
+                        child: const Text(
+                          'Creating your first note in General folder.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    if (canCreateFolder)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: SwitchListTile.adaptive(
+                          contentPadding: EdgeInsets.zero,
+                          value: createNewFolder,
+                          title: const Text('Create new folder'),
+                          dense: true,
+                          onChanged: (value) {
+                            setModalState(() {
+                              createNewFolder = value;
+                              localError = null;
+                            });
+                          },
+                        ),
+                      ),
+                    if (!createNewFolder)
+                      DropdownButtonFormField<String>(
+                        value: selectedFolder,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Folder',
+                          border: OutlineInputBorder(),
+                        ),
+                        items: (bootstrapMode ? ['General'] : availableFolders)
+                            .map(
+                              (folder) => DropdownMenuItem<String>(
+                                value: folder,
+                                child: Text(
+                                  folder,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (lockFolder || bootstrapMode)
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setModalState(() {
+                                  selectedFolder = value;
+                                });
+                              },
+                      ),
+                    if (createNewFolder)
+                      TextField(
+                        controller: newFolderController,
+                        decoration: const InputDecoration(
+                          labelText: 'New folder name',
+                          hintText: 'Enter folder name',
+                          border: OutlineInputBorder(),
+                        ),
+                        textCapitalization: TextCapitalization.words,
+                      ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: titleController,
+                      decoration: const InputDecoration(
+                        labelText: 'Note name',
+                        hintText: 'Enter note title',
+                        border: OutlineInputBorder(),
+                      ),
+                      textCapitalization: TextCapitalization.sentences,
+                    ),
+                    if (localError != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        localError!,
+                        style: const TextStyle(color: Colors.red, fontSize: 12),
+                      ),
+                    ],
+                  ],
                 ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: titleController,
-                  decoration: const InputDecoration(
-                    labelText: 'Note name',
-                    hintText: 'Enter note title',
-                    border: OutlineInputBorder(),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final title = titleController.text.trim();
+                    if (title.isEmpty) {
+                      setModalState(() {
+                        localError = 'Note name is required.';
+                      });
+                      return;
+                    }
+
+                    if (createNewFolder) {
+                      final newFolder = newFolderController.text.trim();
+                      if (newFolder.isEmpty) {
+                        setModalState(() {
+                          localError = 'Folder name is required.';
+                        });
+                        return;
+                      }
+                      final existingIndex = availableFolders.indexWhere(
+                        (f) => f.toLowerCase() == newFolder.toLowerCase(),
+                      );
+                      folderNameToCreate = existingIndex >= 0
+                          ? availableFolders[existingIndex]
+                          : newFolder;
+                    } else {
+                      if (!bootstrapMode && !availableFolders.contains(selectedFolder)) {
+                        setModalState(() {
+                          localError = 'Please select an existing folder.';
+                        });
+                        return;
+                      }
+                      folderNameToCreate = selectedFolder;
+                    }
+
+                    Navigator.pop(ctx, true);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _gold,
+                    foregroundColor: Colors.white,
                   ),
-                  textCapitalization: TextCapitalization.sentences,
+                  child: const Text('Create'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.white,
-              ),
-              child: const Text('Create'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
 
     if (result != true || !mounted) return;
 
-    final folderName = folderController.text.trim().isEmpty
-        ? 'General'
-        : folderController.text.trim();
-    final title = titleController.text.trim().isEmpty
-        ? 'Untitled'
-        : titleController.text.trim();
-
+    final title = titleController.text.trim();
     setState(() => _isLoading = true);
     try {
       final note = await NoteService.createNote(
         widget.userId,
-        folderName: folderName,
+        userRole: widget.userRole,
+        folderName: folderNameToCreate,
         title: title,
         content: '',
       );
@@ -208,7 +347,7 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     );
     if (ok != true || !mounted) return;
     try {
-      await NoteService.deleteNote(widget.userId, note.id);
+      await NoteService.deleteNote(widget.userId, widget.userRole, note.id);
       if (!mounted) return;
       await _loadNotes();
       if (mounted) {
@@ -235,24 +374,28 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final appBar = widget.showAppBar
+        ? AppBar(
+            backgroundColor: _gold,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            surfaceTintColor: Colors.transparent,
+            title: const Text('Notepad'),
+          )
+        : null;
+
     if (_isLoading && _notes.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
-          backgroundColor: _gold,
-          foregroundColor: Colors.white,
-          title: const Text('Notepad'),
-        ),
+        appBar: appBar,
+        backgroundColor: _pageBg,
         body: const Center(child: CircularProgressIndicator()),
       );
     }
 
     if (_errorMessage != null && _notes.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
-          backgroundColor: _gold,
-          foregroundColor: Colors.white,
-          title: const Text('Notepad'),
-        ),
+        appBar: appBar,
+        backgroundColor: _pageBg,
         body: Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -286,54 +429,48 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
 
     if (byFolder.isEmpty) {
       return Scaffold(
-        appBar: AppBar(
+        appBar: appBar,
+        backgroundColor: _pageBg,
+        floatingActionButton: FloatingActionButton.extended(
+          onPressed: _isLoading ? null : _openAddNoteDialog,
           backgroundColor: _gold,
           foregroundColor: Colors.white,
-          title: const Text('Notepad'),
+          icon: const Icon(Icons.add),
+          label: const Text('Add note'),
         ),
-        body: Column(
-        children: [
-          const SizedBox(height: 24),
-          Icon(Icons.note_add_outlined, size: 64, color: Colors.grey.shade400),
-          const SizedBox(height: 16),
-          Text(
-            'No notes yet',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade700,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Padding(
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        body: Center(
+          child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(
-              'Add a note to get started.',
-              style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-              textAlign: TextAlign.center,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.note_add_outlined, size: 64, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                Text(
+                  'No notes yet',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Add a note to get started.',
+                  style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+                  textAlign: TextAlign.center,
+                ),
+              ],
             ),
           ),
-          const Spacer(),
-          Padding(
-            padding: const EdgeInsets.only(bottom: 24),
-            child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _openAddNoteDialog,
-              icon: const Icon(Icons.add),
-              label: const Text('Add note'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-            ),
-          ),
-        ],
         ),
       );
     }
 
     return Scaffold(
-     
+      appBar: appBar,
+      backgroundColor: _pageBg,
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _isLoading ? null : _openAddNoteDialog,
         backgroundColor: _gold,
@@ -341,7 +478,9 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Add note'),
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: RefreshIndicator(
+      color: _gold,
       onRefresh: _loadNotes,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
@@ -360,113 +499,169 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
           ...byFolder.entries.map((entry) {
             final folderName = entry.key;
             final notes = entry.value;
+            final isExpanded = _expandedFolders[folderName] ?? true;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.only(left: 4, top: 12, bottom: 6),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.folder_outlined,
-                        size: 20,
-                        color: _gold,
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        folderName,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFFceb56e),
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    setState(() {
+                      _expandedFolders[folderName] = !isExpanded;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 4, top: 12, bottom: 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.folder_outlined,
+                          size: 20,
+                          color: _gold,
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                ...notes.map((note) {
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Material(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      child: InkWell(
-                        onTap: () => _openNoteDetail(note),
-                        onLongPress: () => _confirmDeleteNote(note),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            folderName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFFceb56e),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 14,
+                            horizontal: 8,
+                            vertical: 3,
                           ),
                           decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.grey.shade200),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.04),
-                                blurRadius: 4,
-                                offset: const Offset(0, 1),
-                              ),
-                            ],
+                            color: _gold.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(999),
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: _gold.withValues(alpha: 0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  Icons.note_outlined,
-                                  size: 22,
-                                  color: _gold,
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      note.title,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
-                                        color: Colors.black87,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    if (note.content.isNotEmpty) ...[
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        note.content.trim(),
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.grey.shade600,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                              ),
-                              Icon(
-                                Icons.chevron_right,
-                                color: Colors.grey.shade400,
-                                size: 22,
-                              ),
-                            ],
+                          child: Text(
+                            '${notes.length}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF8E7A42),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          tooltip: 'Add note to $folderName',
+                          onPressed: _isLoading
+                              ? null
+                              : () => _openAddNoteDialog(
+                                    initialFolder: folderName,
+                                    lockFolder: true,
+                                  ),
+                          icon: const Icon(Icons.add_circle_outline),
+                          color: _gold,
+                        ),
+                        Icon(
+                          isExpanded ? Icons.expand_less : Icons.expand_more,
+                          color: Colors.grey.shade700,
+                        ),
+                      ],
                     ),
-                  );
-                }),
+                  ),
+                ),
+                AnimatedCrossFade(
+                  duration: const Duration(milliseconds: 180),
+                  crossFadeState: isExpanded
+                      ? CrossFadeState.showSecond
+                      : CrossFadeState.showFirst,
+                  firstChild: const SizedBox.shrink(),
+                  secondChild: Column(
+                    children: notes.map((note) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Material(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          child: InkWell(
+                            onTap: () => _openNoteDetail(note),
+                            onLongPress: () => _confirmDeleteNote(note),
+                            borderRadius: BorderRadius.circular(12),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 14,
+                              ),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: Colors.grey.shade200),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.04),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: _gold.withValues(alpha: 0.12),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Icon(
+                                      Icons.note_outlined,
+                                      size: 22,
+                                      color: _gold,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 14),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          note.title,
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.black87,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        if (note.content.isNotEmpty) ...[
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            note.content.trim(),
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                  ),
+                                  Icon(
+                                    Icons.chevron_right,
+                                    color: Colors.grey.shade400,
+                                    size: 22,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
               ],
             );
           }),

@@ -10,6 +10,7 @@ import 'employee_notifications_screen.dart';
 import 'employee_chat_list_screen.dart';
 import '../admin/create_task_screen.dart';
 import '../admin/admin_dashboard.dart';
+import '../admin/notepad_list_screen.dart';
 import '../../widgets/developer_switch_dialog.dart';
 
 class _EditSubtaskEntry {
@@ -533,6 +534,57 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           AttendanceCard(
                             userId: widget.userId,
                             userName: widget.userName,
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: ListTile(
+                              leading: Icon(
+                                Icons.note_alt_outlined,
+                                color: Colors.amber.shade700,
+                              ),
+                              title: const Text(
+                                'My Notepad',
+                                style: TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                              subtitle: Text(
+                                'Only your personal notes',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                              trailing: const Icon(Icons.chevron_right),
+                              onTap: () async {
+                                Navigator.of(context).pop();
+                                await Future.delayed(
+                                  const Duration(milliseconds: 100),
+                                );
+                                if (!context.mounted) return;
+                                await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => NotepadListScreen(
+                                      userId: widget.userId,
+                                      userRole: widget.userRole,
+                                      userName: widget.userName,
+                                      showAppBar: true,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
                           ),
                           const SizedBox(height: 12),
                           GestureDetector(

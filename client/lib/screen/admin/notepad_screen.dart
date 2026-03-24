@@ -88,7 +88,11 @@ class _NotepadScreenState extends State<NotepadScreen> {
     }
 
     try {
-      final note = await NoteService.getNote(widget.userId, widget.noteId!);
+      final note = await NoteService.getNote(
+        widget.userId,
+        widget.userRole,
+        widget.noteId!,
+      );
       if (!mounted) return;
       _controller.text = note.content;
       _noteTitle = note.title;
@@ -119,7 +123,10 @@ class _NotepadScreenState extends State<NotepadScreen> {
     });
 
     try {
-      final remote = await NoteService.getMyNote(widget.userId);
+      final remote = await NoteService.getMyNote(
+        widget.userId,
+        widget.userRole,
+      );
       if (!mounted) return;
       if (remote.isNotEmpty && remote != _controller.text) {
         _controller.text = remote;
@@ -136,6 +143,7 @@ class _NotepadScreenState extends State<NotepadScreen> {
       try {
         await NoteService.updateNote(
           widget.userId,
+          widget.userRole,
           widget.noteId!,
           content: _controller.text,
         );
@@ -156,7 +164,7 @@ class _NotepadScreenState extends State<NotepadScreen> {
     await prefs.setString(_storageKey, text);
 
     try {
-      await NoteService.saveMyNote(widget.userId, text);
+      await NoteService.saveMyNote(widget.userId, widget.userRole, text);
       if (!mounted) return;
       setState(() {
         _isSaved = true;
@@ -195,7 +203,7 @@ class _NotepadScreenState extends State<NotepadScreen> {
     );
     if (ok != true || !mounted) return;
     try {
-      await NoteService.deleteNote(widget.userId, widget.noteId!);
+      await NoteService.deleteNote(widget.userId, widget.userRole, widget.noteId!);
       if (!mounted) return;
       Navigator.pop(context, true);
     } catch (e) {
