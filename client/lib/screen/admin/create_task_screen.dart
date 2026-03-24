@@ -53,6 +53,28 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   TimeOfDay? _selectedTime;
   bool _isLoading = false;
 
+  bool get _isManagerRole =>
+      widget.userRole == 'admin' ||
+      widget.userRole == 'subadmin' ||
+      widget.userRole == 'techincharge';
+
+  bool get _isEmployeeTargetedFlow {
+    if (widget.assignMode == CreateTaskAssignMode.employee) {
+      return true;
+    }
+    if (widget.assignMode == null && widget.showAssignToSelector && _assignTo == 'employee') {
+      return true;
+    }
+    return false;
+  }
+
+  List<Map<String, String>> get _visibleCategories {
+    if (_isEmployeeTargetedFlow) {
+      return _categories.where((c) => c['value'] != 'personal').toList();
+    }
+    return _categories;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -63,6 +85,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         widget.assignedToEmployeeId!.trim().isNotEmpty) {
       _assignTo = 'employee';
       _selectedEmployeeId = widget.assignedToEmployeeId!.trim();
+      if (_selectedCategory == 'personal') {
+        _selectedCategory = 'project';
+      }
     }
     _subtaskEntries.add(_SubtaskEntry(
       _nextSubtaskId(),
@@ -190,6 +215,29 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
           ? widget.userId
           : _selectedEmployeeId!.trim();
 
+      if (_selectedCategory == 'personal' && assignedTo != widget.userId) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Personal tasks can only be assigned to self.',
+              ),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+        setState(() {
+          _assignTo = 'self';
+          _selectedEmployeeId = null;
+        });
+        return;
+      }
+
       final subtaskList = _subtaskEntries
           .map((e) => e.controller.text.trim())
           .where((s) => s.isNotEmpty)
@@ -285,76 +333,225 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: const Color(0xFFF5F5F7),
+      backgroundColor: Colors.white,
       appBar: AppBar(
         title: const Text('Create Task'),
         centerTitle: true,
       ),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(16),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 500),
-              child: Card(
-                elevation: 4,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 20,
-                  ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final isWide = constraints.maxWidth >= 900;
+            return SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 980),
                   child: Form(
                     key: _formKey,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildSectionTitle('Task Category'),
-                        _buildCategoryButtons(),
-                        const SizedBox(height: 20),
-                        if (widget.showAssignToSelector &&
-                            widget.assignMode == null) ...[
-                          _buildSectionTitle('Assign To'),
-                          _buildAssignToSelector(),
-                          const SizedBox(height: 20),
-                        ],
-                        if (widget.assignMode == CreateTaskAssignMode.employee &&
-                            widget.assignedToEmployeeName != null) ...[
-                          _buildAssigningToChip(),
-                          const SizedBox(height: 16),
-                        ],
-                        _buildSectionTitle('Task Title'),
-                        _buildTitleField(),
-                        const SizedBox(height: 20),
-                        _buildSectionTitle('Subtasks'),
-                        _buildSubtasksSection(),
-                        const SizedBox(height: 20),
-                        _buildSectionTitle('Description'),
-                        _buildDescriptionField(),
-                        const SizedBox(height: 20),
-                        _buildSectionTitle('Priority'),
-                        _buildPrioritySelector(),
-                        const SizedBox(height: 20),
-                        _buildSectionTitle('Deadline'),
-                        _buildDeadlinePresetButtons(),
-                        if (_deadlinePreset == 'custom') ...[
+                    
+                       
+                        if (isWide)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _buildSectionCard(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildSectionTitle('Task Category'),
+                                      _buildCategoryButtons(),
+                                      if (_isEmployeeTargetedFlow) ...[
+                                        const SizedBox(height: 8),
+                                        Text(
+                                          'Personal category is available only for self-assigned tasks.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildSectionCard(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      if (widget.showAssignToSelector &&
+                                          widget.assignMode == null) ...[
+                                        _buildSectionTitle('Assign To'),
+                                        _buildAssignToSelector(),
+                                      ] else ...[
+                                        _buildSectionTitle('Assignment'),
+                                        Text(
+                                          'Assigned automatically based on selected employee context.',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ],
+                                      if (widget.assignMode ==
+                                              CreateTaskAssignMode.employee &&
+                                          widget.assignedToEmployeeName != null) ...[
+                                        const SizedBox(height: 12),
+                                        _buildAssigningToChip(),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else ...[
+                          _buildSectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildSectionTitle('Task Category'),
+                                _buildCategoryButtons(),
+                                if (_isEmployeeTargetedFlow) ...[
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'Personal category is available only for self-assigned tasks.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
                           const SizedBox(height: 12),
-                          _buildDeadlineSelector(),
+                          if (widget.showAssignToSelector &&
+                              widget.assignMode == null)
+                            _buildSectionCard(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildSectionTitle('Assign To'),
+                                  _buildAssignToSelector(),
+                                ],
+                              ),
+                            ),
+                          if (widget.assignMode == CreateTaskAssignMode.employee &&
+                              widget.assignedToEmployeeName != null) ...[
+                            const SizedBox(height: 12),
+                            _buildAssigningToChip(),
+                          ],
                         ],
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 12),
+                        _buildSectionCard(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildSectionTitle('Task Title'),
+                              _buildTitleField(),
+                              const SizedBox(height: 16),
+                              _buildSectionTitle('Subtasks'),
+                              _buildSubtasksSection(),
+                              const SizedBox(height: 16),
+                              _buildSectionTitle('Description'),
+                              _buildDescriptionField(),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        if (isWide)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: _buildSectionCard(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildSectionTitle('Priority'),
+                                      _buildPrioritySelector(),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _buildSectionCard(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      _buildSectionTitle('Deadline'),
+                                      _buildDeadlinePresetButtons(),
+                                      if (_deadlinePreset == 'custom') ...[
+                                        const SizedBox(height: 12),
+                                        _buildDeadlineSelector(),
+                                      ],
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        else ...[
+                          _buildSectionCard(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _buildSectionTitle('Priority'),
+                                _buildPrioritySelector(),
+                                const SizedBox(height: 16),
+                                _buildSectionTitle('Deadline'),
+                                _buildDeadlinePresetButtons(),
+                                if (_deadlinePreset == 'custom') ...[
+                                  const SizedBox(height: 12),
+                                  _buildDeadlineSelector(),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 16),
                         _buildCreateButton(),
                       ],
                     ),
                   ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
+    );
+  }
+
+  Widget _buildSectionCard({required Widget child}) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 
@@ -364,7 +561,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       child: Text(
         title,
         style: const TextStyle(
-          fontSize: 16,
+          fontSize: 15,
           fontWeight: FontWeight.bold,
           color: Colors.black87,
         ),
@@ -431,17 +628,37 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   }
 
   Widget _buildCategoryButtons() {
+    final categories = _visibleCategories;
+
+    if (_selectedCategory == 'personal' &&
+        categories.every((c) => c['value'] != 'personal')) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _selectedCategory = 'project';
+        });
+      });
+    }
+
     return Wrap(
       spacing: 8,
       runSpacing: 8,
-      children: _categories.map((category) {
+      children: categories.map((category) {
         final value = category['value']!;
         final label = category['label']!;
         final isSelected = _selectedCategory == value;
         return _buildSelectButton(
           label: label,
           isSelected: isSelected,
-          onTap: () => setState(() => _selectedCategory = value),
+          onTap: () {
+            setState(() {
+              _selectedCategory = value;
+              if (_isManagerRole && value == 'personal' && _assignTo == 'employee') {
+                _assignTo = 'self';
+                _selectedEmployeeId = null;
+              }
+            });
+          },
         );
       }).toList(),
     );
@@ -449,53 +666,74 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   Widget _buildAssignToSelector() {
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        RadioListTile<String>(
-          title: const Text('Assign to Self'),
-          value: 'self',
-          groupValue: _assignTo,
-          onChanged: (value) {
-            setState(() {
-              _assignTo = value!;
-            });
-          },
-          activeColor: const Color(0xFFceb56e),
-        ),
-        RadioListTile<String>(
-          title: const Text('Assign to Employee'),
-          value: 'employee',
-          groupValue: _assignTo,
-          onChanged: (value) {
-            setState(() {
-              _assignTo = value!;
-            });
-          },
-          activeColor: const Color(0xFFceb56e),
-        ),
-        if (_assignTo == 'employee' && widget.assignMode == null)
-          Padding(
-            padding: const EdgeInsets.only(left: 16, top: 8),
-            child: TextFormField(
-              decoration: InputDecoration(
-                labelText: 'Employee ID',
-                hintText: 'Enter employee user ID',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              validator: (value) {
-                if (_assignTo == 'employee' &&
-                    (value == null || value.isEmpty)) {
-                  return 'Please enter employee ID';
-                }
-                return null;
+        Row(
+          children: [
+            _buildSelectButton(
+              label: 'Assign to Self',
+              isSelected: _assignTo == 'self',
+              onTap: () {
+                setState(() {
+                  _assignTo = 'self';
+                });
               },
-              onChanged: (value) {
-                _selectedEmployeeId = value;
-              },
+              flex: true,
             ),
+            _buildSelectButton(
+              label: 'Assign to Employee',
+              isSelected: _assignTo == 'employee',
+              onTap: () {
+                if (_selectedCategory == 'personal') {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text(
+                        'Personal tasks can only be assigned to self.',
+                      ),
+                      backgroundColor: Colors.red.shade600,
+                      behavior: SnackBarBehavior.floating,
+                      margin: const EdgeInsets.all(16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                setState(() {
+                  _assignTo = 'employee';
+                  if (_selectedCategory == 'personal') {
+                    _selectedCategory = 'project';
+                  }
+                });
+              },
+              flex: true,
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (_assignTo == 'employee' && widget.assignMode == null)
+          TextFormField(
+            decoration: InputDecoration(
+              labelText: 'Employee ID',
+              hintText: 'Enter employee user ID',
+              prefixIcon: const Icon(Icons.badge_outlined),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              filled: true,
+              fillColor: Colors.white,
+            ),
+            validator: (value) {
+              if (_assignTo == 'employee' &&
+                  (value == null || value.trim().isEmpty)) {
+                return 'Please enter employee ID';
+              }
+              return null;
+            },
+            onChanged: (value) {
+              _selectedEmployeeId = value;
+            },
           ),
       ],
     );
@@ -766,11 +1004,12 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Widget _buildCreateButton() {
     return SizedBox(
       width: double.infinity,
-      height: 50,
+      height: 52,
       child: ElevatedButton(
         onPressed: _isLoading ? null : _createTask,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFFceb56e),
+          elevation: 1,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),

@@ -8,10 +8,14 @@ class TaskService {
     String userId,
     String userRole, {
     bool needHelpOnly = false,
+    String? targetUserId,
   }) async {
     try {
       final query = StringBuffer(
           '${ApiConfig.baseUrl}/tasks?user_id=$userId&user_role=$userRole');
+      if (targetUserId != null && targetUserId.trim().isNotEmpty) {
+        query.write('&target_user_id=${Uri.encodeQueryComponent(targetUserId.trim())}');
+      }
       if (needHelpOnly) {
         query.write('&need_help=1');
       }
@@ -123,6 +127,72 @@ class TaskService {
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
+  // Get hidden tasks for current user
+  static Future<Map<String, dynamic>> getHiddenTasks(
+    String userId,
+    String userRole,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/tasks/hidden?user_id=${Uri.encodeQueryComponent(userId)}&user_role=${Uri.encodeQueryComponent(userRole)}',
+        ),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      throw Exception('Server error: ${response.statusCode}');
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
+  // Hide task for current user
+  static Future<Map<String, dynamic>> hideTask(
+    String taskId,
+    String userId,
+    String userRole,
+  ) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/tasks/$taskId/hide'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'user_id': userId, 'user_role': userRole}),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      throw Exception('Server error: ${response.statusCode}');
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
+  // Restore hidden task for current user
+  static Future<Map<String, dynamic>> unhideTask(
+    String taskId,
+    String userId,
+    String userRole,
+  ) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/tasks/$taskId/unhide'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'user_id': userId, 'user_role': userRole}),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
       throw Exception('Network error: $e');
     }

@@ -11,6 +11,7 @@ import 'employee_chat_list_screen.dart';
 import '../admin/create_task_screen.dart';
 import '../admin/admin_dashboard.dart';
 import '../admin/notepad_list_screen.dart';
+import '../task/hidden_tasks_screen.dart';
 import '../../widgets/developer_switch_dialog.dart';
 
 class _EditSubtaskEntry {
@@ -44,6 +45,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
   /// Status filter: null = all, else one of assigned, in_progress, completed, paused, need_help
   String? _statusFilter;
+  String? _assignmentByFilter;
   int _unreadNotifications = 0;
   int _unreadChats = 0;
 
@@ -272,6 +274,134 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
+  String _assignmentFilterLabel(String value) {
+    switch (value) {
+      case 'self':
+        return 'Assigned to Self';
+      case 'admin':
+        return 'Assigned by Admin';
+      case 'subadmin':
+        return 'Assigned by Sub-Admin';
+      case 'techincharge':
+        return 'Assigned by Tech Incharge';
+      default:
+        return 'All assignment types';
+    }
+  }
+
+  void _showAssignmentByFilterPopup(BuildContext context) {
+    final options = const [
+      {'value': null, 'label': 'All assignment types'},
+      {'value': 'self', 'label': 'Assigned to Self'},
+      {'value': 'admin', 'label': 'Assigned by Admin'},
+      {'value': 'subadmin', 'label': 'Assigned by Sub-Admin'},
+      {'value': 'techincharge', 'label': 'Assigned by Tech Incharge'},
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Filter by assignment',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Show tasks by assignment source.',
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 16),
+                ...options.map((opt) {
+                  final value = opt['value'];
+                  final label = opt['label']!;
+                  final isSelected = _assignmentByFilter == value;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          setState(() {
+                            _assignmentByFilter = value;
+                          });
+                          Navigator.pop(context);
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                            horizontal: 12,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? _gold.withValues(alpha: 0.12)
+                                : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected ? _gold : Colors.grey.shade200,
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              if (isSelected)
+                                const Icon(
+                                  Icons.check_circle,
+                                  color: Color(0xFF6B5B2E),
+                                  size: 22,
+                                ),
+                              if (isSelected) const SizedBox(width: 12),
+                              Text(
+                                label,
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                  color: isSelected
+                                      ? const Color(0xFF6B5B2E)
+                                      : Colors.grey.shade800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _showLogoutConfirmation(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -313,6 +443,115 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
   }
 
+  Future<void> _openHiddenTasks() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HiddenTasksScreen(
+          userId: widget.userId,
+          userRole: widget.userRole,
+          title: 'Hidden Tasks',
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (changed == true) {
+      _fetchTasks();
+    }
+  }
+
+  Future<void> _moveTaskToHidden(Task task) async {
+    final canHide = task.isAssignedToSelf && task.assignedTo == widget.userId;
+    if (!canHide) return;
+    try {
+      final response = await TaskService.hideTask(
+        task.id,
+        widget.userId,
+        widget.userRole,
+      );
+      if (response['status'] != 'success') {
+        throw Exception((response['message'] ?? 'Failed to hide task').toString());
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _tasks.removeWhere((t) => t.id == task.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Task moved to hidden'),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showTaskLongPressActions(Task task) async {
+    final canHide = task.isAssignedToSelf && task.assignedTo == widget.userId;
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Task Actions',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                if (canHide)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.visibility_off_outlined),
+                    title: const Text('Move to Hidden Tasks'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _moveTaskToHidden(task);
+                    },
+                  )
+                else
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.info_outline,
+                      color: Colors.grey.shade600,
+                    ),
+                    title: const Text('Only self-assigned tasks can be hidden'),
+                    onTap: () => Navigator.pop(ctx),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -329,6 +568,25 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ),
             elevation: 0,
             actions: [
+              IconButton(
+                icon: const Icon(Icons.visibility_off_outlined),
+                tooltip: 'Hidden tasks',
+                onPressed: _openHiddenTasks,
+              ),
+              IconButton(
+                icon: Icon(
+                  _assignmentByFilter != null
+                      ? Icons.assignment_ind
+                      : Icons.assignment_ind_outlined,
+                  color: _assignmentByFilter != null
+                      ? Colors.black87
+                      : Colors.white,
+                ),
+                tooltip: _assignmentByFilter != null
+                    ? 'Filter: ${_assignmentFilterLabel(_assignmentByFilter!)} (tap to change)'
+                    : 'Filter by assignment',
+                onPressed: () => _showAssignmentByFilterPopup(context),
+              ),
               IconButton(
                 icon: Icon(
                   _statusFilter != null
@@ -772,6 +1030,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           .where((t) => t.status == _statusFilter)
           .toList();
     }
+    if (_assignmentByFilter != null) {
+      tasksForCategory = tasksForCategory.where((t) {
+        if (_assignmentByFilter == 'self') {
+          return t.isAssignedToSelf;
+        }
+        return t.normalizedCreatorRole == _assignmentByFilter;
+      }).toList();
+    }
 
     if (tasksForCategory.isEmpty) {
       return Center(
@@ -1062,6 +1328,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => _openTaskDetails(task),
+        onLongPress: () => _showTaskLongPressActions(task),
         borderRadius: BorderRadius.circular(14),
         child: Container(
           decoration: BoxDecoration(
@@ -1332,6 +1599,24 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     ),
                   ),
                 ],
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: Text(
+                    task.assignmentByLabel(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -1590,6 +1875,16 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           ),
                         ],
                       ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Text(
+                        task.assignmentByLabel(),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                     if (task.status == 'need_help' &&
                         task.needHelpNote != null &&
                         task.needHelpNote!.isNotEmpty)

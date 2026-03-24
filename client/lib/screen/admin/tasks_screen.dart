@@ -5,6 +5,7 @@ import '../../services/user_service.dart';
 import '../../services/notification_service.dart';
 import '../../models/task_model.dart';
 import 'create_task_screen.dart';
+import '../task/hidden_tasks_screen.dart';
 
 class TasksScreen extends StatefulWidget {
   final String userId;
@@ -121,6 +122,115 @@ class _TasksScreenState extends State<TasksScreen> {
     }
   }
 
+  Future<void> _openHiddenTasks() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HiddenTasksScreen(
+          userId: widget.userId,
+          userRole: widget.userRole,
+          title: 'Hidden Tasks',
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (changed == true) {
+      _fetchTasks();
+    }
+  }
+
+  Future<void> _moveTaskToHidden(Task task) async {
+    final canHide = task.isAssignedToSelf && task.assignedTo == widget.userId;
+    if (!canHide) return;
+    try {
+      final response = await TaskService.hideTask(
+        task.id,
+        widget.userId,
+        widget.userRole,
+      );
+      if (response['status'] != 'success') {
+        throw Exception((response['message'] ?? 'Failed to hide task').toString());
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _tasks.removeWhere((t) => t.id == task.id);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Task moved to hidden'),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _showTaskLongPressActions(Task task) async {
+    final canHide = task.isAssignedToSelf && task.assignedTo == widget.userId;
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Task Actions',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 10),
+                if (canHide)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.visibility_off_outlined),
+                    title: const Text('Move to Hidden Tasks'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _moveTaskToHidden(task);
+                    },
+                  )
+                else
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Icon(
+                      Icons.info_outline,
+                      color: Colors.grey.shade600,
+                    ),
+                    title: const Text('Only self-assigned tasks can be hidden'),
+                    onTap: () => Navigator.pop(ctx),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildAdminModeSelector() {
     return Container(
       width: double.infinity,
@@ -162,6 +272,9 @@ class _TasksScreenState extends State<TasksScreen> {
                     if (_viewMode == 'employee') return;
                     setState(() {
                       _viewMode = 'employee';
+                      if (_selectedCategory == 'personal') {
+                        _selectedCategory = 'all';
+                      }
                     });
                     _fetchTasks();
                   },
@@ -527,9 +640,10 @@ class _TasksScreenState extends State<TasksScreen> {
     });
 
     try {
-      // Decide which user and role to use based on current view
+      // Managers always query as themselves; optional employee scope is sent separately.
       String userId = widget.userId;
       String userRole = widget.userRole;
+      String? targetUserId;
 
       if (_isManagerRole && _viewMode == 'employee') {
         // When viewing employee tasks, require a selected employee
@@ -540,11 +654,14 @@ class _TasksScreenState extends State<TasksScreen> {
           });
           return;
         }
-        userId = _selectedEmployeeId!;
-        userRole = 'employee';
+        targetUserId = _selectedEmployeeId!;
       }
 
-      final response = await TaskService.getTasks(userId, userRole);
+      final response = await TaskService.getTasks(
+        userId,
+        userRole,
+        targetUserId: targetUserId,
+      );
 
       if (response['status'] == 'success') {
         final List<dynamic> tasksData = response['data'] ?? [];
@@ -1327,27 +1444,38 @@ class _TasksScreenState extends State<TasksScreen> {
             ),
           ],
         ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _buildCategoryChip('All', 'all'),
-              const SizedBox(width: 8),
-              _buildCategoryChip('Daily', 'daily'),
-              const SizedBox(width: 8),
-              _buildCategoryChip('Project', 'project'),
-              const SizedBox(width: 8),
-              _buildCategoryChip('Monthly', 'monthly'),
-              const SizedBox(width: 8),
-              _buildCategoryChip('Quarterly', 'quarterly'),
-              const SizedBox(width: 8),
-              _buildCategoryChip('Yearly', 'yearly'),
-              const SizedBox(width: 8),
-              _buildCategoryChip('Personal', 'personal'),
-              const SizedBox(width: 8),
-              _buildCategoryChip('Other', 'other'),
-            ],
-          ),
+        child: Row(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    _buildCategoryChip('All', 'all'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Daily', 'daily'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Project', 'project'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Personal', 'personal'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Monthly', 'monthly'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Quarterly', 'quarterly'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Yearly', 'yearly'),
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Other', 'other'),
+                  ],
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Hidden tasks',
+              icon: const Icon(Icons.visibility_off_outlined, size: 20),
+              onPressed: _openHiddenTasks,
+            ),
+          ],
         ),
       );
     }
@@ -1442,7 +1570,7 @@ class _TasksScreenState extends State<TasksScreen> {
                 ],
               ),
             ),
-            if (_isManagerRole && _viewMode == 'self') ...[
+            if (_isManagerRole) ...[
               const SizedBox(height: 12),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -1459,8 +1587,6 @@ class _TasksScreenState extends State<TasksScreen> {
                     _buildCategoryChip('Quarterly', 'quarterly'),
                     const SizedBox(width: 8),
                     _buildCategoryChip('Yearly', 'yearly'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Personal', 'personal'),
                     const SizedBox(width: 8),
                     _buildCategoryChip('Other', 'other'),
                   ],
@@ -1516,7 +1642,7 @@ class _TasksScreenState extends State<TasksScreen> {
     }
 
     String categoryLabel;
-    if (!_isManagerRole || _viewMode != 'self') {
+    if (!_isManagerRole) {
       categoryLabel = '';
     } else {
       switch (_selectedCategory) {
@@ -1647,6 +1773,11 @@ class _TasksScreenState extends State<TasksScreen> {
     final statusColor = _getStatusColor(task.status);
     final priorityColor = _getPriorityColor(task.priority);
     final isSelfTask = task.createdBy == task.assignedTo;
+    final isSelfContextForHidden = !_isManagerRole || _viewMode == 'self';
+    final categoryLabel = task.category.isNotEmpty
+        ? task.category[0].toUpperCase() + task.category.substring(1)
+        : 'Task';
+    final statusLabel = task.status.replaceAll('_', ' ');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1655,6 +1786,9 @@ class _TasksScreenState extends State<TasksScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => _openTaskDetails(task),
+        onLongPress: isSelfContextForHidden
+            ? () => _showTaskLongPressActions(task)
+            : null,
         borderRadius: BorderRadius.circular(14),
         child: Container(
           decoration: BoxDecoration(
@@ -1698,9 +1832,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            task.category[0].toUpperCase() +
-                                task.category.substring(1) +
-                                ' task',
+                            '$categoryLabel • $statusLabel',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,
@@ -2090,20 +2222,18 @@ class _TasksScreenState extends State<TasksScreen> {
                 Builder(
                   builder: (context) {
                     String? label;
-                    if (task.assignedTo.isNotEmpty &&
-                        task.createdBy == task.assignedTo) {
-                      label = 'Self task';
-                    } else if (task.creatorName != null &&
-                        task.creatorName!.isNotEmpty) {
-                      label = 'Assigned by: ${task.creatorName}';
-                    } else if (task.createdBy.isNotEmpty) {
-                      label = 'Assigned by admin';
+                    if (task.createdBy.isNotEmpty) {
+                      final includeEmployeeNameForSelf =
+                          task.isAssignedToSelf && task.assignedTo != widget.userId;
+                      label = task.assignmentByLabel(
+                        includeEmployeeNameForSelf: includeEmployeeNameForSelf,
+                      );
                     }
                     if (label == null) return const SizedBox.shrink();
                     return Row(
                       children: [
                         Icon(
-                          isSelfTask
+                          task.isAssignedToSelf
                               ? Icons.person
                               : Icons.admin_panel_settings,
                           size: 14,
@@ -2785,10 +2915,28 @@ class _TasksScreenState extends State<TasksScreen> {
                     if (isSelfTask)
                       Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.person_pin_circle_outlined, size: 14),
-                          SizedBox(width: 4),
-                          Text('Self task', style: TextStyle(fontSize: 12)),
+                        children: [
+                          const Icon(Icons.person_pin_circle_outlined, size: 14),
+                          const SizedBox(width: 4),
+                          Text(
+                            task.assignmentByLabel(
+                              includeEmployeeNameForSelf:
+                                  task.assignedTo != widget.userId,
+                            ),
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      )
+                    else
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.admin_panel_settings, size: 14),
+                          const SizedBox(width: 4),
+                          Text(
+                            task.assignmentByLabel(),
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         ],
                       ),
                   ],

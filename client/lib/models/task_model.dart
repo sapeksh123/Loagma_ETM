@@ -78,9 +78,11 @@ class Task {
   final String createdBy;
   final String assignedTo;
   final String? creatorName;
+  final String? creatorRole;
   final String? assigneeName;
   final String? assigneeCode;
   final String? needHelpNote;
+  final String? hiddenAt;
   final String createdAt;
   final String updatedAt;
   final List<DailyStatusEntry>? taskHistory;
@@ -100,9 +102,11 @@ class Task {
     required this.createdBy,
     required this.assignedTo,
     this.creatorName,
+    this.creatorRole,
     this.assigneeName,
     this.assigneeCode,
     this.needHelpNote,
+    this.hiddenAt,
     required this.createdAt,
     required this.updatedAt,
     this.taskHistory,
@@ -196,9 +200,11 @@ class Task {
       createdBy: json['created_by'] ?? '',
       assignedTo: json['assigned_to'] ?? '',
       creatorName: json['creator_name'],
+      creatorRole: json['creator_role']?.toString(),
       assigneeName: json['assignee_name'],
       assigneeCode: json['assignee_code'],
       needHelpNote: json['need_help_note'],
+      hiddenAt: json['hidden_at']?.toString(),
       createdAt: json['createdAt'] ?? '',
       updatedAt: json['updatedAt'] ?? '',
       taskHistory: parseTaskHistory(json['task_history']),
@@ -220,6 +226,41 @@ class Task {
       'created_by': createdBy,
       'assigned_to': assignedTo,
     };
+  }
+
+  bool get isAssignedToSelf => createdBy.isNotEmpty && createdBy == assignedTo;
+
+  String get normalizedCreatorRole {
+    final role = (creatorRole ?? '').trim().toLowerCase();
+    if (role == 'admin' || role == 'subadmin' || role == 'techincharge' || role == 'employee') {
+      return role;
+    }
+    return '';
+  }
+
+  String assignmentByLabel({bool includeEmployeeNameForSelf = false}) {
+    if (isAssignedToSelf) {
+      if (includeEmployeeNameForSelf && assigneeName != null && assigneeName!.trim().isNotEmpty) {
+        return 'Assigned to Self (${assigneeName!.trim()})';
+      }
+      return 'Assigned to Self';
+    }
+
+    switch (normalizedCreatorRole) {
+      case 'admin':
+        return 'Assigned by Admin';
+      case 'subadmin':
+        return 'Assigned by Sub-Admin';
+      case 'techincharge':
+        return 'Assigned by Tech Incharge';
+      case 'employee':
+        return 'Assigned by Employee';
+      default:
+        if (creatorName != null && creatorName!.trim().isNotEmpty) {
+          return 'Assigned by ${creatorName!.trim()}';
+        }
+        return 'Assigned by Manager';
+    }
   }
 
   /// Description only (no subtasks). For legacy tasks with combined text, strips the "Subtasks:..." part.

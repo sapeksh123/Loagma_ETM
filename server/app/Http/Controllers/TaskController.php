@@ -11,11 +11,44 @@ use Carbon\Carbon;
 
 class TaskController extends Controller
 {
+    private static function actorFromRequest(Request $request)
+    {
+        $userId = $request->input('user_id') ?: $request->query('user_id');
+        $userRole = $request->input('user_role') ?: $request->query('user_role');
+        return [
+            'user_id' => is_string($userId) ? trim($userId) : null,
+            'user_role' => is_string($userRole) ? trim($userRole) : null,
+        ];
+    }
+
+    private static function canHideTaskForActor($task, string $actorUserId)
+    {
+        return (string) ($task->created_by ?? '') === $actorUserId
+            && (string) ($task->assigned_to ?? '') === $actorUserId;
+    }
+
+    private static function mapRoleIdToAppRole($roleId)
+    {
+        switch ((string) $roleId) {
+            case 'R001':
+                return 'admin';
+            case 'R006':
+                return 'subadmin';
+            case 'R007':
+                return 'techincharge';
+            default:
+                return 'employee';
+        }
+    }
+
     /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response, plus attach daily history for daily tasks. */
     private static function decodeTask($task)
     {
         if (!$task) return $task;
         $arr = (array) $task;
+        if (!isset($arr['creator_role']) && isset($arr['creator_role_id'])) {
+            $arr['creator_role'] = self::mapRoleIdToAppRole($arr['creator_role_id']);
+        }
         if (isset($arr['subtasks'])) {
             $raw = is_string($arr['subtasks']) ? json_decode($arr['subtasks'], true) : $arr['subtasks'];
             $arr['subtasks'] = self::normalizeSubtasksForResponse($raw ?? []);
@@ -202,6 +235,7 @@ class TaskController extends Controller
         try {
             $userId = $request->query('user_id');
             $userRole = $request->query('user_role'); // 'admin' or 'employee'
+            $targetUserId = $request->query('target_user_id');
 
             if (!$userId || !$userRole) {
                 return response()->json([
@@ -211,39 +245,116 @@ class TaskController extends Controller
             }
 
             if (in_array($userRole, ['admin', 'subadmin', 'techincharge'], true)) {
-                // Manager roles (admin, subadmin, techincharge) see:
-                // - ALL project tasks
-                // - Their own tasks (created_by = user or assigned_to = user)
-                $tasks = DB::table('tasks')
+                // Manager roles see all non-personal tasks.
+                // Optional target_user_id narrows results to one employee scope.
+                $query = DB::table('tasks')
                     ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
                     ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
                     ->select(
                         'tasks.*',
                         'creator.name as creator_name',
+                        'creator.roleId as creator_role_id',
                         'assignee.name as assignee_name',
                         'assignee.employeeCode as assignee_code'
                     )
-                    ->where(function ($query) use ($userId) {
-                        $query->where('tasks.category', 'project')
-                            ->orWhere('tasks.created_by', $userId)
-                            ->orWhere('tasks.assigned_to', $userId);
-                    })
-                    ->orderBy('tasks.createdAt', 'desc')
-                    ->get();
+                    ->where('tasks.category', '!=', 'personal');
+
+                if (Schema::hasTable('task_hidden_items')) {
+                    $query->leftJoin('task_hidden_items as hidden', function ($join) use ($userId) {
+                        $join->on('hidden.task_id', '=', 'tasks.id')
+                            ->where('hidden.hidden_by_user_id', '=', $userId);
+                    })->whereNull('hidden.id');
+                }
+
+                if ($targetUserId) {
+                    $query->where(function ($q) use ($targetUserId) {
+                        $q->where('tasks.created_by', $targetUserId)
+                            ->orWhere('tasks.assigned_to', $targetUserId);
+                    });
+                }
+
+                $tasks = $query->orderBy('tasks.createdAt', 'desc')->get();
             } else {
-                // Employee sees: only their own tasks
+                // Employee sees their own tasks (assigned to them OR created by them).
                 $tasks = DB::table('tasks')
                     ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
                     ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
                     ->select(
                         'tasks.*',
                         'creator.name as creator_name',
+                        'creator.roleId as creator_role_id',
                         'assignee.name as assignee_name'
                     )
-                    ->where('tasks.assigned_to', $userId)
+                    ->where(function ($query) use ($userId) {
+                        $query->where('tasks.assigned_to', $userId)
+                            ->orWhere('tasks.created_by', $userId);
+                    });
+
+                if (Schema::hasTable('task_hidden_items')) {
+                    $tasks->leftJoin('task_hidden_items as hidden', function ($join) use ($userId) {
+                        $join->on('hidden.task_id', '=', 'tasks.id')
+                            ->where('hidden.hidden_by_user_id', '=', $userId);
+                    })->whereNull('hidden.id');
+                }
+
+                $tasks = $tasks
                     ->orderBy('tasks.createdAt', 'desc')
                     ->get();
             }
+
+            $data = $tasks->map(function ($task) {
+                return self::decodeTask($task);
+            })->values()->all();
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $data
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Get hidden tasks for current actor
+    public function hiddenIndex(Request $request)
+    {
+        try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
+            if (!Schema::hasTable('task_hidden_items')) {
+                return response()->json([
+                    'status' => 'success',
+                    'data' => []
+                ]);
+            }
+
+            $tasks = DB::table('task_hidden_items as hidden')
+                ->join('tasks', 'hidden.task_id', '=', 'tasks.id')
+                ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
+                ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
+                ->select(
+                    'tasks.*',
+                    'creator.name as creator_name',
+                    'creator.roleId as creator_role_id',
+                    'assignee.name as assignee_name',
+                    'assignee.employeeCode as assignee_code',
+                    'hidden.created_at as hidden_at'
+                )
+                ->where('hidden.hidden_by_user_id', $userId)
+                ->orderBy('hidden.created_at', 'desc')
+                ->get();
 
             $data = $tasks->map(function ($task) {
                 return self::decodeTask($task);
@@ -280,6 +391,14 @@ class TaskController extends Controller
             // Ensure creator and assignee users exist to satisfy FK constraints
             $creatorId = $validated['created_by'];
             $assigneeId = $validated['assigned_to'];
+
+            // Personal tasks are strictly self-assigned only.
+            if (($validated['category'] ?? '') === 'personal' && $creatorId !== $assigneeId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Personal tasks can only be assigned to self',
+                ], 422);
+            }
 
             $existingCreator = DB::table('users')->where('id', $creatorId)->first();
             if (!$existingCreator) {
@@ -407,6 +526,16 @@ class TaskController extends Controller
                 'assigned_to' => 'sometimes|string',
             ]);
 
+            $nextCategory = $validated['category'] ?? $task->category;
+            $nextAssignedTo = $validated['assigned_to'] ?? $task->assigned_to;
+            $creatorId = $task->created_by;
+            if ($nextCategory === 'personal' && $nextAssignedTo !== $creatorId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Personal tasks can only be assigned to self',
+                ], 422);
+            }
+
             $update = $validated;
             $isDaily = $task->category === 'daily';
             if (array_key_exists('subtasks', $update)) {
@@ -442,7 +571,18 @@ class TaskController extends Controller
             }
             DB::table('tasks')->where('id', $id)->update($update);
 
-            $updatedTask = DB::table('tasks')->where('id', $id)->first();
+            $updatedTask = DB::table('tasks')
+                ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
+                ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
+                ->select(
+                    'tasks.*',
+                    'creator.name as creator_name',
+                    'creator.roleId as creator_role_id',
+                    'assignee.name as assignee_name',
+                    'assignee.employeeCode as assignee_code'
+                )
+                ->where('tasks.id', $id)
+                ->first();
 
             return response()->json([
                 'status' => 'success',
@@ -537,6 +677,105 @@ class TaskController extends Controller
                 'status' => 'success',
                 'message' => 'Task status updated successfully',
                 'data' => self::decodeTask($updatedTask)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Hide task for current actor (self-assigned tasks only)
+    public function hide(Request $request, $id)
+    {
+        try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
+            $task = DB::table('tasks')->where('id', $id)->first();
+            if (!$task) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Task not found'
+                ], 404);
+            }
+
+            if (!self::canHideTaskForActor($task, $userId)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Only self-assigned tasks can be moved to hidden'
+                ], 403);
+            }
+
+            if (!Schema::hasTable('task_hidden_items')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Hidden tasks feature is not available yet'
+                ], 500);
+            }
+
+            DB::table('task_hidden_items')->updateOrInsert(
+                [
+                    'task_id' => $id,
+                    'hidden_by_user_id' => $userId,
+                ],
+                [
+                    'updated_at' => Carbon::now(),
+                    'created_at' => Carbon::now(),
+                ]
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Task moved to hidden'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Unhide task for current actor
+    public function unhide(Request $request, $id)
+    {
+        try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
+            if (!Schema::hasTable('task_hidden_items')) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => 'Task restored successfully'
+                ]);
+            }
+
+            DB::table('task_hidden_items')
+                ->where('task_id', $id)
+                ->where('hidden_by_user_id', $userId)
+                ->delete();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Task restored successfully'
             ]);
         } catch (\Exception $e) {
             return response()->json([

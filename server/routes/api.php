@@ -46,11 +46,14 @@ Route::get('/departments', [DepartmentController::class, 'index']);
 
 // Task Routes
 Route::get('/tasks', [TaskController::class, 'index']);
+Route::get('/tasks/hidden', [TaskController::class, 'hiddenIndex']);
 Route::post('/tasks', [TaskController::class, 'store']);
 Route::get('/tasks/{id}', [TaskController::class, 'show']);
 Route::put('/tasks/{id}', [TaskController::class, 'update']);
 Route::delete('/tasks/{id}', [TaskController::class, 'destroy']);
 Route::patch('/tasks/{id}/status', [TaskController::class, 'updateStatus']);
+Route::patch('/tasks/{id}/hide', [TaskController::class, 'hide']);
+Route::patch('/tasks/{id}/unhide', [TaskController::class, 'unhide']);
 
 // Notes Routes (list + CRUD; /me routes kept for backward compatibility)
 Route::middleware('chat.actor')->group(function () {
