@@ -9,6 +9,7 @@ class TaskService {
     String userRole, {
     bool needHelpOnly = false,
     String? targetUserId,
+    bool currentOnly = false,
   }) async {
     try {
       final query = StringBuffer(
@@ -18,6 +19,9 @@ class TaskService {
       }
       if (needHelpOnly) {
         query.write('&need_help=1');
+      }
+      if (currentOnly) {
+        query.write('&current_only=1');
       }
       final response = await http.get(
         Uri.parse(query.toString()),
@@ -122,6 +126,31 @@ class TaskService {
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
+    } catch (e) {
+      throw Exception('Network error: $e');
+    }
+  }
+
+  // Mark a task as current work for its assignee.
+  static Future<Map<String, dynamic>> moveToCurrentTask(
+    String taskId, {
+    required String userId,
+    required String userRole,
+  }) async {
+    try {
+      final response = await http.patch(
+        Uri.parse('${ApiConfig.baseUrl}/tasks/$taskId/current'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'user_id': userId,
+          'user_role': userRole,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+      throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
       throw Exception('Network error: $e');
     }

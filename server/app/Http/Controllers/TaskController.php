@@ -11,6 +11,16 @@ use Carbon\Carbon;
 
 class TaskController extends Controller
 {
+    private const VALID_STATUSES = [
+        'assigned',
+        'in_progress',
+        'completed',
+        'paused',
+        'need_help',
+        'ignore',
+        'hold',
+    ];
+
     private static function actorFromRequest(Request $request)
     {
         $userId = $request->input('user_id') ?: $request->query('user_id');
@@ -96,6 +106,12 @@ class TaskController extends Controller
         }
 
         return false;
+    }
+
+    private static function canSetCurrentForActor($task, string $actorUserId, string $actorRole): bool
+    {
+        // Keep current-task permissions aligned with status-update permissions.
+        return self::canUpdateStatusForActor($task, $actorUserId, $actorRole);
     }
 
     /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response, plus attach daily history for daily tasks. */
@@ -205,11 +221,10 @@ class TaskController extends Controller
         $out = [];
         foreach ($raw as $item) {
             if (is_array($item) && isset($item['text'])) {
-                $validStatus = ['assigned', 'in_progress', 'completed', 'paused', 'need_help', 'ignore'];
                 $status = $item['status'] ?? 'assigned';
                 $row = [
                     'text' => (string) $item['text'],
-                    'status' => in_array($status, $validStatus) ? $status : 'assigned',
+                    'status' => in_array($status, self::VALID_STATUSES, true) ? $status : 'assigned',
                 ];
                 if (!empty($item['need_help_note']) && is_string($item['need_help_note'])) {
                     $row['need_help_note'] = trim($item['need_help_note']);
@@ -235,9 +250,8 @@ class TaskController extends Controller
         $out = [];
         foreach ($input as $item) {
             if (is_array($item) && isset($item['text'])) {
-                $validStatus = ['assigned', 'in_progress', 'completed', 'paused', 'need_help', 'ignore'];
                 $status = $item['status'] ?? 'assigned';
-                if (!in_array($status, $validStatus)) {
+                if (!in_array($status, self::VALID_STATUSES, true)) {
                     $status = 'assigned';
                 }
                 $text = trim((string) $item['text']);
@@ -293,6 +307,7 @@ class TaskController extends Controller
             $userId = $request->query('user_id');
             $userRole = $request->query('user_role'); // 'admin' or 'employee'
             $targetUserId = $request->query('target_user_id');
+            $currentOnly = (string) $request->query('current_only', '0') === '1';
 
             if (!$userId || !$userRole) {
                 return response()->json([
@@ -330,6 +345,10 @@ class TaskController extends Controller
                     });
                 }
 
+                if ($currentOnly && Schema::hasColumn('tasks', 'is_current')) {
+                    $query->where('tasks.is_current', 1);
+                }
+
                 $tasks = $query->orderBy('tasks.createdAt', 'desc')->get();
             } else {
                 // Employee sees their own tasks (assigned to them OR created by them).
@@ -355,6 +374,9 @@ class TaskController extends Controller
                 }
 
                 $tasks = $tasks
+                    ->when($currentOnly && Schema::hasColumn('tasks', 'is_current'), function ($q) {
+                        $q->where('tasks.is_current', 1);
+                    })
                     ->orderBy('tasks.createdAt', 'desc')
                     ->get();
             }
@@ -644,7 +666,7 @@ class TaskController extends Controller
                 'subtasks' => 'nullable|array',
                 'category' => 'sometimes|in:daily,project,personal,monthly,quarterly,yearly,other',
                 'priority' => 'sometimes|in:low,medium,high,critical',
-                'status' => 'sometimes|in:assigned,in_progress,completed,paused,need_help,ignore',
+                'status' => 'sometimes|in:assigned,in_progress,completed,paused,need_help,ignore,hold',
                 'deadline_date' => 'nullable|date',
                 'deadline_time' => 'nullable',
                 'assigned_to' => 'sometimes|string',
@@ -782,7 +804,7 @@ class TaskController extends Controller
             }
 
             $validated = $request->validate([
-                'status' => 'required|in:assigned,in_progress,completed,paused,need_help,ignore',
+                'status' => 'required|in:assigned,in_progress,completed,paused,need_help,ignore,hold',
                 'need_help_note' => 'nullable|string|max:2000',
             ]);
 
@@ -837,6 +859,76 @@ class TaskController extends Controller
                 'status' => 'success',
                 'message' => 'Task status updated successfully',
                 'data' => self::decodeTask($updatedTask)
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    // Move task to current work for its assignee
+    public function moveToCurrent(Request $request, $id)
+    {
+        try {
+            $actor = self::actorFromRequest($request);
+            $userId = $actor['user_id'];
+            $userRole = $actor['user_role'];
+
+            if (!$userId || !$userRole) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'user_id and user_role are required'
+                ], 400);
+            }
+
+            if (!Schema::hasColumn('tasks', 'is_current')) {
+                DB::statement('ALTER TABLE tasks ADD COLUMN is_current TINYINT(1) NOT NULL DEFAULT 0 AFTER status');
+            }
+
+            $task = DB::table('tasks')->where('id', $id)->first();
+            if (!$task) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Task not found'
+                ], 404);
+            }
+
+            if (!self::canSetCurrentForActor($task, $userId, $userRole)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Not authorized to mark current task'
+                ], 403);
+            }
+
+            $assigneeId = (string) ($task->assigned_to ?? '');
+            if ($assigneeId === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Task has no assignee'
+                ], 422);
+            }
+
+            DB::transaction(function () use ($id, $assigneeId, $task) {
+                DB::table('tasks')
+                    ->where('assigned_to', $assigneeId)
+                    ->where('id', '!=', $id)
+                    ->update(['is_current' => 0]);
+
+                $update = ['is_current' => 1];
+                if (in_array((string) $task->status, ['assigned', 'paused', 'hold'], true)) {
+                    $update['status'] = 'in_progress';
+                }
+                DB::table('tasks')->where('id', $id)->update($update);
+            });
+
+            $updatedTask = DB::table('tasks')->where('id', $id)->first();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Task moved to current successfully',
+                'data' => self::decodeTask($updatedTask),
             ]);
         } catch (\Exception $e) {
             return response()->json([

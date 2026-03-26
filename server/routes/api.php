@@ -52,6 +52,7 @@ Route::get('/tasks/{id}', [TaskController::class, 'show']);
 Route::put('/tasks/{id}', [TaskController::class, 'update']);
 Route::delete('/tasks/{id}', [TaskController::class, 'destroy']);
 Route::patch('/tasks/{id}/status', [TaskController::class, 'updateStatus']);
+Route::patch('/tasks/{id}/current', [TaskController::class, 'moveToCurrent']);
 Route::patch('/tasks/{id}/hide', [TaskController::class, 'hide']);
 Route::patch('/tasks/{id}/unhide', [TaskController::class, 'unhide']);
 

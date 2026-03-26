@@ -44,7 +44,7 @@ class SubtaskItem {
   static String _parseStatus(dynamic s) {
     if (s == null) return 'assigned';
     final v = s.toString();
-    const valid = ['assigned', 'in_progress', 'completed', 'paused', 'need_help', 'ignore'];
+    const valid = ['assigned', 'in_progress', 'completed', 'paused', 'need_help', 'ignore', 'hold'];
     if (valid.contains(v)) return v;
     return 'assigned';
   }
@@ -73,6 +73,7 @@ class Task {
   final String category;
   final String priority;
   final String status;
+  final bool isCurrent;
   final String? deadlineDate;
   final String? deadlineTime;
   final String createdBy;
@@ -97,6 +98,7 @@ class Task {
     required this.category,
     required this.priority,
     required this.status,
+    this.isCurrent = false,
     this.deadlineDate,
     this.deadlineTime,
     required this.createdBy,
@@ -195,6 +197,7 @@ class Task {
       category: json['category'] ?? '',
       priority: json['priority'] ?? 'medium',
       status: json['status'] ?? 'assigned',
+      isCurrent: _parseBool(json['is_current']),
       deadlineDate: json['deadline_date'],
       deadlineTime: json['deadline_time'],
       createdBy: json['created_by'] ?? '',
@@ -221,6 +224,7 @@ class Task {
       'category': category,
       'priority': priority,
       'status': status,
+      'is_current': isCurrent,
       'deadline_date': deadlineDate,
       'deadline_time': deadlineTime,
       'created_by': createdBy,
@@ -296,5 +300,12 @@ class Task {
   List<SubtaskItem> get subtasksWithStatus {
     if (subtaskItems != null && subtaskItems!.isNotEmpty) return subtaskItems!;
     return subtasksOnly.map((t) => SubtaskItem(text: t, status: 'assigned')).toList();
+  }
+
+  static bool _parseBool(dynamic value) {
+    if (value is bool) return value;
+    if (value is num) return value != 0;
+    final raw = value?.toString().trim().toLowerCase() ?? '';
+    return raw == '1' || raw == 'true' || raw == 'yes';
   }
 }
