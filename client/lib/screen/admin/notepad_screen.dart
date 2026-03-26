@@ -304,6 +304,12 @@ class _NotepadScreenState extends State<NotepadScreen> {
               textAlignVertical: TextAlignVertical.top,
               decoration: InputDecoration(
                 hintText: 'Write anything here...\nIt auto-saves.',
+                hintStyle: TextStyle(
+                  color: Colors.grey.shade300,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w300,
+                  height: 1.35,
+                ),
                 filled: true,
                 fillColor: Colors.white,
                 border: OutlineInputBorder(
