@@ -52,9 +52,15 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   @override
   void initState() {
     super.initState();
-    _fetchTasks();
-    _loadNotificationsSummary();
-    _loadChatSummary();
+    _loadDashboardData();
+  }
+
+  Future<void> _loadDashboardData() async {
+    await Future.wait([
+      _fetchTasks(),
+      _loadNotificationsSummary(),
+      _loadChatSummary(),
+    ]);
   }
 
   Future<void> _fetchTasks() async {
@@ -68,6 +74,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       final response = await TaskService.getTasks(
         widget.userId,
         widget.userRole,
+        view: 'minimal',
+        includeHistory: false,
       );
 
       if (response['status'] == 'success') {
@@ -504,8 +512,46 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
   }
 
+  Future<void> _moveTaskToCurrent(Task task) async {
+    if (!_canChangeTaskStatus(task)) return;
+    try {
+      await TaskService.moveToCurrentTask(
+        task.id,
+        userId: widget.userId,
+        userRole: widget.userRole,
+      );
+      if (!mounted) return;
+      await _fetchTasks();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Moved "${task.title}" to current task'),
+          backgroundColor: Colors.blue.shade700,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
+    }
+  }
+
   Future<void> _showTaskLongPressActions(Task task) async {
     final canHide = task.isAssignedToSelf && task.assignedTo == widget.userId;
+    final canMoveCurrent = _canChangeTaskStatus(task);
     await showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -543,6 +589,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     ),
                     title: const Text('Only self-assigned tasks can be hidden'),
                     onTap: () => Navigator.pop(ctx),
+                  ),
+                if (canMoveCurrent)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(
+                      Icons.play_circle_fill_rounded,
+                      color: Colors.blue,
+                    ),
+                    title: const Text('Move to Current Task'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _moveTaskToCurrent(task);
+                    },
                   ),
               ],
             ),
@@ -1338,11 +1397,19 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
   Widget _buildTaskCard(Task task) {
     final statusColor = _getStatusColor(task.status);
+    final currentColor = Colors.blue.shade700;
+    final accentColor = task.isCurrent ? currentColor : statusColor;
     final isNeedHelp = task.status == 'need_help';
-    final cardBorderColor = isNeedHelp ? Colors.grey : statusColor;
-    final cardBackground = isNeedHelp
+    final cardBorderColor = isNeedHelp ? Colors.grey : accentColor;
+    final cardBackground = task.isCurrent
+      ? Colors.blue.shade50.withValues(alpha: 0.5)
+      : isNeedHelp
         ? Colors.grey.shade50
         : _getStatusBackground(task.status);
+    final categoryLabel = task.category.isNotEmpty
+      ? task.category[0].toUpperCase() + task.category.substring(1)
+      : 'Task';
+    final statusLabel = task.status.replaceAll('_', ' ');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1380,15 +1447,48 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        task.title,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.black87,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            task.title,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.black87,
+                            ),
+                            softWrap: true,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$categoryLabel • $statusLabel',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          if (task.isCurrent) ...[
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'CURRENT',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: currentColor,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1425,19 +1525,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     task.descriptionOnly!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Description',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
                     task.descriptionOnly!,
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                      height: 1.35,
+                    ),
+                    softWrap: true,
                   ),
                 ],
                 if (task.subtasksWithStatus.isNotEmpty) ...[
@@ -1482,8 +1576,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                             ? TextDecoration.lineThrough
                                             : null,
                                       ),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
+                                      softWrap: true,
                                     ),
                                   ),
                                   const SizedBox(width: 6),
@@ -1856,6 +1949,25 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
+                    if (task.isCurrent)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          'CURRENT',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                      ),
                     Container(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 10,
@@ -2677,6 +2789,28 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       ],
                     ),
                     const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 44,
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          Navigator.pop(context);
+                          await _moveTaskToCurrent(task);
+                        },
+                        icon: const Icon(
+                          Icons.play_circle_fill_rounded,
+                          color: Colors.blue,
+                        ),
+                        label: const Text(
+                          'Move To Current Task',
+                          style: TextStyle(color: Colors.blue),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.blue.shade200),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
                     SizedBox(
                       width: double.infinity,
                       height: 46,

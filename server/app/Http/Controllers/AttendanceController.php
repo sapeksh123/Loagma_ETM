@@ -44,18 +44,41 @@ class AttendanceController extends Controller
             ->orderBy('name')
             ->get();
 
+        $userIds = $users->pluck('id')->all();
+        $attendanceByUserId = collect();
+        $breaksByAttendanceId = collect();
+
+        if (!empty($userIds)) {
+            $attendanceRows = DB::table('attendances')
+                ->where('date', $date)
+                ->whereIn('user_id', $userIds)
+                ->get();
+
+            $attendanceByUserId = $attendanceRows->keyBy('user_id');
+
+            $attendanceIds = $attendanceRows->pluck('id')->all();
+            if (!empty($attendanceIds)) {
+                $breaksByAttendanceId = DB::table('attendance_breaks')
+                    ->whereIn('attendance_id', $attendanceIds)
+                    ->orderBy('start_time')
+                    ->get()
+                    ->groupBy('attendance_id');
+            }
+        }
+
         $data = [];
         $presentCount = 0;
         $absentCount = 0;
 
         foreach ($users as $user) {
-            // Reuse existing per-user summary for today when date is today.
-            // For other dates we approximate by looking up attendance directly.
-            if ($date === $now->toDateString()) {
-                $summary = $this->buildTodaySummary($user->id);
-            } else {
-                $summary = $this->buildSummaryForDate($user->id, $date);
-            }
+            $attendance = $attendanceByUserId->get($user->id);
+            $summary = $attendance
+                ? $this->buildSummaryFromAttendance(
+                    $attendance,
+                    $breaksByAttendanceId->get($attendance->id, collect()),
+                    $now
+                )
+                : $this->emptySummary();
 
             $status = $summary['status'] ?? 'not_punched_in';
             $isPresent = in_array($status, ['working', 'on_break', 'completed'], true);
@@ -365,81 +388,14 @@ class AttendanceController extends Controller
             ->first();
 
         if (!$attendance) {
-            return [
-                'status' => 'not_punched_in',
-                'punch_in_time' => null,
-                'punch_out_time' => null,
-                'work_duration_seconds' => 0,
-                'break_duration_seconds' => 0,
-                'lunch_break_taken' => false,
-                'current_break' => null,
-            ];
+            return $this->emptySummary();
         }
 
         $breaks = DB::table('attendance_breaks')
             ->where('attendance_id', $attendance->id)
             ->get();
 
-        $activeBreak = $breaks->firstWhere('end_time', null);
-
-        $completedBreakSeconds = 0;
-        foreach ($breaks as $break) {
-            if ($break->end_time !== null) {
-                $start = Carbon::parse($break->start_time, 'Asia/Kolkata');
-                $end = Carbon::parse($break->end_time, 'Asia/Kolkata');
-                $completedBreakSeconds += $end->diffInSeconds($start);
-            }
-        }
-
-        $activeBreakSeconds = 0;
-        if ($activeBreak) {
-            $start = Carbon::parse($activeBreak->start_time, 'Asia/Kolkata');
-            $activeBreakSeconds = $now->diffInSeconds($start);
-        }
-
-        $totalBreakSeconds = $completedBreakSeconds + $activeBreakSeconds;
-
-        $punchIn = Carbon::parse($attendance->punch_in_at, 'Asia/Kolkata');
-        $workEnd = $attendance->punch_out_at
-            ? Carbon::parse($attendance->punch_out_at, 'Asia/Kolkata')
-            : $now;
-
-        $workSeconds = max(
-            0,
-            $workEnd->diffInSeconds($punchIn) - $totalBreakSeconds
-        );
-
-        if ($attendance->punch_out_at !== null) {
-            $status = 'completed';
-        } elseif ($activeBreak) {
-            $status = 'on_break';
-        } else {
-            $status = 'working';
-        }
-
-        $lunchBreakTaken = $breaks->where('type', 'lunch')->isNotEmpty();
-
-        return [
-            'status' => $status,
-            'punch_in_time' => $punchIn->toIso8601String(),
-            'punch_out_time' => $attendance->punch_out_at
-                ? Carbon::parse($attendance->punch_out_at, 'Asia/Kolkata')->toIso8601String()
-                : null,
-            'work_duration_seconds' => $workSeconds,
-            'break_duration_seconds' => $totalBreakSeconds,
-            'lunch_break_taken' => $lunchBreakTaken,
-            'current_break' => $activeBreak
-                ? [
-                    'type' => $activeBreak->type,
-                    'reason' => $activeBreak->reason,
-                    'started_at' => Carbon::parse(
-                        $activeBreak->start_time,
-                        'Asia/Kolkata'
-                    )->toIso8601String(),
-                    'duration_seconds' => $activeBreakSeconds,
-                ]
-                : null,
-        ];
+        return $this->buildSummaryFromAttendance($attendance, $breaks, $now);
     }
 
     /**
@@ -455,23 +411,31 @@ class AttendanceController extends Controller
             ->first();
 
         if (!$attendance) {
-            return [
-                'status' => 'not_punched_in',
-                'punch_in_time' => null,
-                'punch_out_time' => null,
-                'work_duration_seconds' => 0,
-                'break_duration_seconds' => 0,
-                'lunch_break_taken' => false,
-                'current_break' => null,
-            ];
+            return $this->emptySummary();
         }
 
-        // For past days, we rely on stored punch_out and completed breaks.
-        // For current day (if called via this method), behavior is similar to buildTodaySummary.
         $breaks = DB::table('attendance_breaks')
             ->where('attendance_id', $attendance->id)
             ->get();
 
+        return $this->buildSummaryFromAttendance($attendance, $breaks, $asOf);
+    }
+
+    protected function emptySummary(): array
+    {
+        return [
+            'status' => 'not_punched_in',
+            'punch_in_time' => null,
+            'punch_out_time' => null,
+            'work_duration_seconds' => 0,
+            'break_duration_seconds' => 0,
+            'lunch_break_taken' => false,
+            'current_break' => null,
+        ];
+    }
+
+    protected function buildSummaryFromAttendance(object $attendance, $breaks, Carbon $asOf): array
+    {
         $activeBreak = $breaks->firstWhere('end_time', null);
 
         $completedBreakSeconds = 0;
@@ -496,10 +460,7 @@ class AttendanceController extends Controller
             ? Carbon::parse($attendance->punch_out_at, 'Asia/Kolkata')
             : $asOf;
 
-        $workSeconds = max(
-            0,
-            $workEnd->diffInSeconds($punchIn) - $totalBreakSeconds
-        );
+        $workSeconds = max(0, $workEnd->diffInSeconds($punchIn) - $totalBreakSeconds);
 
         if ($attendance->punch_out_at !== null) {
             $status = 'completed';
@@ -524,10 +485,7 @@ class AttendanceController extends Controller
                 ? [
                     'type' => $activeBreak->type,
                     'reason' => $activeBreak->reason,
-                    'started_at' => Carbon::parse(
-                        $activeBreak->start_time,
-                        'Asia/Kolkata'
-                    )->toIso8601String(),
+                    'started_at' => Carbon::parse($activeBreak->start_time, 'Asia/Kolkata')->toIso8601String(),
                     'duration_seconds' => $activeBreakSeconds,
                 ]
                 : null,

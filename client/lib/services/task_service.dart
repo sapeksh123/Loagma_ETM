@@ -1,8 +1,33 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'api_config.dart';
+import 'local_cache_service.dart';
 
 class TaskService {
+  static const Duration _tasksCacheTtl = Duration(seconds: 45);
+  static final Map<String, Future<Map<String, dynamic>>> _pendingGets = {};
+
+  static String _tasksCacheKey(
+    String userId,
+    String userRole, {
+    bool needHelpOnly = false,
+    String? targetUserId,
+    bool currentOnly = false,
+  }) {
+    return [
+      'tasks',
+      userId,
+      userRole,
+      targetUserId ?? '',
+      needHelpOnly ? '1' : '0',
+      currentOnly ? '1' : '0',
+    ].join('|');
+  }
+
+  static Future<void> _invalidateTaskCache() {
+    return LocalCacheService.invalidatePrefix('tasks|');
+  }
+
   // Get all tasks
   static Future<Map<String, dynamic>> getTasks(
     String userId,
@@ -10,32 +35,94 @@ class TaskService {
     bool needHelpOnly = false,
     String? targetUserId,
     bool currentOnly = false,
+    int? perPage,
+    int? page,
+    bool useCursorPagination = false,
+    String? cursorCreatedAt,
+    String? cursorId,
+    String view = 'full',
+    bool includeHistory = true,
   }) async {
-    try {
-      final query = StringBuffer(
-          '${ApiConfig.baseUrl}/tasks?user_id=$userId&user_role=$userRole');
-      if (targetUserId != null && targetUserId.trim().isNotEmpty) {
-        query.write('&target_user_id=${Uri.encodeQueryComponent(targetUserId.trim())}');
-      }
-      if (needHelpOnly) {
-        query.write('&need_help=1');
-      }
-      if (currentOnly) {
-        query.write('&current_only=1');
-      }
-      final response = await http.get(
-        Uri.parse(query.toString()),
-        headers: {'Content-Type': 'application/json'},
-      );
+    final cacheKey = _tasksCacheKey(
+      userId,
+      userRole,
+      needHelpOnly: needHelpOnly,
+      targetUserId: targetUserId,
+      currentOnly: currentOnly,
+    );
 
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      } else {
-        throw Exception('Server error: ${response.statusCode}');
-      }
-    } catch (e) {
-      throw Exception('Network error: $e');
+    final cached = await LocalCacheService.getJsonMap(
+      cacheKey,
+      ttl: _tasksCacheTtl,
+    );
+    if (cached != null) {
+      return cached;
     }
+
+    final inflight = _pendingGets[cacheKey];
+    if (inflight != null) {
+      return inflight;
+    }
+
+    final future = () async {
+      try {
+        final query = StringBuffer(
+            '${ApiConfig.baseUrl}/tasks?user_id=$userId&user_role=$userRole');
+        if (targetUserId != null && targetUserId.trim().isNotEmpty) {
+          query.write('&target_user_id=${Uri.encodeQueryComponent(targetUserId.trim())}');
+        }
+        if (needHelpOnly) {
+          query.write('&need_help=1');
+        }
+        if (currentOnly) {
+          query.write('&current_only=1');
+        }
+        if (perPage != null && perPage > 0) {
+          query.write('&per_page=$perPage');
+        }
+        if (page != null && page > 0) {
+          query.write('&page=$page');
+        }
+        if (useCursorPagination) {
+          query.write('&pagination_mode=cursor');
+          if (cursorCreatedAt != null && cursorCreatedAt.trim().isNotEmpty) {
+            query.write('&cursor_created_at=${Uri.encodeQueryComponent(cursorCreatedAt.trim())}');
+          }
+          if (cursorId != null && cursorId.trim().isNotEmpty) {
+            query.write('&cursor_id=${Uri.encodeQueryComponent(cursorId.trim())}');
+          }
+        }
+        if (view.trim().isNotEmpty) {
+          query.write('&view=${Uri.encodeQueryComponent(view.trim().toLowerCase())}');
+        }
+        query.write('&include_history=${includeHistory ? '1' : '0'}');
+
+        final response = await http.get(
+          Uri.parse(query.toString()),
+          headers: {'Content-Type': 'application/json'},
+        );
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+          await LocalCacheService.putJson(
+            cacheKey,
+            decoded,
+            ttl: _tasksCacheTtl,
+          );
+          return decoded;
+        } else {
+          throw Exception('Server error: ${response.statusCode}');
+        }
+      } catch (e) {
+        throw Exception('Network error: $e');
+      } finally {
+        _pendingGets.remove(cacheKey);
+      }
+    }();
+
+    _pendingGets[cacheKey] = future;
+
+    return future;
   }
 
   // Create a new task
@@ -50,7 +137,9 @@ class TaskService {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        await _invalidateTaskCache();
+        return decoded;
       }
       if (response.statusCode == 422) {
         final body = jsonDecode(response.body);
@@ -89,7 +178,9 @@ class TaskService {
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        await _invalidateTaskCache();
+        return decoded;
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
@@ -122,7 +213,9 @@ class TaskService {
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        await _invalidateTaskCache();
+        return decoded;
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
@@ -148,7 +241,9 @@ class TaskService {
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        await _invalidateTaskCache();
+        return decoded;
       }
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
@@ -171,7 +266,9 @@ class TaskService {
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        await _invalidateTaskCache();
+        return decoded;
       } else {
         throw Exception('Server error: ${response.statusCode}');
       }
@@ -194,7 +291,9 @@ class TaskService {
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        await _invalidateTaskCache();
+        return decoded;
       }
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
@@ -216,7 +315,9 @@ class TaskService {
       );
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body);
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        await _invalidateTaskCache();
+        return decoded;
       }
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/note_model.dart';
 import '../../services/note_service.dart';
@@ -34,7 +35,29 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
   @override
   void initState() {
     super.initState();
-    _loadNotes();
+    _checkAndOpenLastNote();
+  }
+
+  Future<void> _checkAndOpenLastNote() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastNoteId = prefs.getString(_lastNoteKey());
+    if (lastNoteId != null && lastNoteId.isNotEmpty) {
+      // Try to find the note in the list after loading
+      await _loadNotes();
+      Note? note;
+      try {
+        note = _notes.firstWhere((n) => n.id == lastNoteId);
+      } catch (_) {
+        note = null;
+      }
+      if (note != null) {
+        await _openNoteDetail(note);
+      }
+      // Clear the last note key so it doesn't auto-open again
+      await prefs.remove(_lastNoteKey());
+    } else {
+      await _loadNotes();
+    }
   }
 
   Future<void> _loadNotes() async {
@@ -303,8 +326,11 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     }
   }
 
-  void _openNoteDetail(Note note) {
-    Navigator.push(
+  Future<void> _openNoteDetail(Note note) async {
+    // Save last opened note ID
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastNoteKey(), note.id);
+    await Navigator.push(
       context,
       MaterialPageRoute<void>(
         builder: (context) => NotepadScreen(
@@ -315,8 +341,11 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
           initialNote: note,
         ),
       ),
-    ).then((_) => _loadNotes());
+    );
+    _loadNotes();
   }
+
+  String _lastNoteKey() => 'notepad:last_opened:${widget.userId}:${widget.userRole}';
 
   Future<void> _confirmDeleteNote(Note note) async {
     final ok = await showDialog<bool>(

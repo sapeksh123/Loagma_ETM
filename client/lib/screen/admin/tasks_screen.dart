@@ -45,7 +45,6 @@ class _TasksScreenState extends State<TasksScreen> {
   String? _selectedEmployeeName;
   String? _selectedEmployeePhone;
   bool _filtersExpanded = false;
-  bool _employeeCurrentOnly = false;
   final TextEditingController _employeeSearchController =
       TextEditingController();
 
@@ -186,6 +185,7 @@ class _TasksScreenState extends State<TasksScreen> {
 
   Future<void> _showTaskLongPressActions(Task task) async {
     final canHide = task.isAssignedToSelf && task.assignedTo == widget.userId;
+    final canManageStatus = _canChangeTaskStatus(task);
     await showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -224,6 +224,29 @@ class _TasksScreenState extends State<TasksScreen> {
                     title: const Text('Only self-assigned tasks can be hidden'),
                     onTap: () => Navigator.pop(ctx),
                   ),
+                if (canManageStatus)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(
+                      Icons.play_circle_fill_rounded,
+                      color: Colors.blue,
+                    ),
+                    title: const Text('Move to Current Task'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _moveTaskToCurrent(task);
+                    },
+                  ),
+                if (canManageStatus)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.pause_circle_outline),
+                    title: const Text('Hold Task'),
+                    onTap: () async {
+                      Navigator.pop(ctx);
+                      await _updateTaskStatusWithOptionalNote(task, 'hold');
+                    },
+                  ),
               ],
             ),
           ),
@@ -259,7 +282,6 @@ class _TasksScreenState extends State<TasksScreen> {
                     if (_viewMode == 'self') return;
                     setState(() {
                       _viewMode = 'self';
-                      _employeeCurrentOnly = false;
                     });
                     _fetchTasks();
                   },
@@ -275,7 +297,6 @@ class _TasksScreenState extends State<TasksScreen> {
                     setState(() {
                       _viewMode = 'employee';
                       _selectedFilter = 'all';
-                      _employeeCurrentOnly = false;
                       if (_selectedCategory == 'personal') {
                         _selectedCategory = 'all';
                       }
@@ -405,7 +426,6 @@ class _TasksScreenState extends State<TasksScreen> {
               _selectedEmployeeId = null;
               _selectedEmployeeName = null;
               _selectedEmployeePhone = null;
-              _employeeCurrentOnly = false;
             });
             _fetchTasks();
           },
@@ -561,7 +581,6 @@ class _TasksScreenState extends State<TasksScreen> {
                   _selectedEmployeeId = emp['id'] as String?;
                   _selectedEmployeeName = emp['name'] as String?;
                   _selectedEmployeePhone = emp['phone'] as String?;
-                  _employeeCurrentOnly = false;
                 });
                 _fetchTasks();
               },
@@ -667,7 +686,6 @@ class _TasksScreenState extends State<TasksScreen> {
         userId,
         userRole,
         targetUserId: targetUserId,
-        currentOnly: _isManagerRole && _viewMode == 'employee' && _employeeCurrentOnly,
       );
 
       if (response['status'] == 'success') {
@@ -823,9 +841,6 @@ class _TasksScreenState extends State<TasksScreen> {
     if (!skipStatusFilter && _selectedFilter != 'all') {
       list = list.where((task) => task.status == _selectedFilter).toList();
     }
-    if (_isManagerRole && _viewMode == 'employee' && _employeeCurrentOnly) {
-      list = list.where((task) => task.isCurrent).toList();
-    }
     if (_selectedCategory != 'all') {
       list = list.where((task) => task.category == _selectedCategory).toList();
     }
@@ -949,6 +964,7 @@ class _TasksScreenState extends State<TasksScreen> {
     required BuildContext context,
     required Task task,
   }) async {
+    final canManageStatus = _canChangeTaskStatus(task);
     await showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -991,6 +1007,26 @@ class _TasksScreenState extends State<TasksScreen> {
                     );
                   }).toList(),
                 ),
+                if (canManageStatus) ...[
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _moveTaskToCurrent(task);
+                      },
+                      icon: const Icon(
+                        Icons.play_circle_fill_rounded,
+                        color: Colors.blue,
+                      ),
+                      label: const Text(
+                        'Move To Current Task',
+                        style: TextStyle(color: Colors.blue),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -1837,40 +1873,6 @@ class _TasksScreenState extends State<TasksScreen> {
               ),
             ],
             if (_isManagerRole) ...[
-              if (isManagerEmployeeView) ...[
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    FilterChip(
-                      label: const Text('All Tasks'),
-                      selected: !_employeeCurrentOnly,
-                      onSelected: (_) {
-                        setState(() => _employeeCurrentOnly = false);
-                        _fetchTasks();
-                      },
-                      backgroundColor: Colors.white,
-                      selectedColor: const Color(0xFFceb56e).withValues(alpha: 0.2),
-                    ),
-                    FilterChip(
-                      label: const Text('Current'),
-                      selected: _employeeCurrentOnly,
-                      onSelected: (_) {
-                        setState(() => _employeeCurrentOnly = true);
-                        _fetchTasks();
-                      },
-                      avatar: Icon(
-                        Icons.play_circle_fill_rounded,
-                        size: 14,
-                        color: _employeeCurrentOnly ? Colors.blue : Colors.grey.shade600,
-                      ),
-                      backgroundColor: Colors.white,
-                      selectedColor: Colors.blue.withValues(alpha: 0.18),
-                    ),
-                  ],
-                ),
-              ],
               const SizedBox(height: 12),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
@@ -1935,22 +1937,21 @@ class _TasksScreenState extends State<TasksScreen> {
 
   String _buildFilterSummary() {
     if (_isManagerRole && _viewMode == 'employee') {
-      final currentPrefix = _employeeCurrentOnly ? 'Current • ' : '';
       switch (_selectedCategory) {
         case 'daily':
-          return '${currentPrefix}Category: Daily';
+          return 'Category: Daily';
         case 'project':
-          return '${currentPrefix}Category: Project';
+          return 'Category: Project';
         case 'monthly':
-          return '${currentPrefix}Category: Monthly';
+          return 'Category: Monthly';
         case 'quarterly':
-          return '${currentPrefix}Category: Quarterly';
+          return 'Category: Quarterly';
         case 'yearly':
-          return '${currentPrefix}Category: Yearly';
+          return 'Category: Yearly';
         case 'other':
-          return '${currentPrefix}Category: Other';
+          return 'Category: Other';
         default:
-          return '${currentPrefix}Category: All';
+          return 'Category: All';
       }
     }
 
@@ -2275,8 +2276,7 @@ class _TasksScreenState extends State<TasksScreen> {
                               fontWeight: FontWeight.w700,
                               color: Colors.black87,
                             ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                            softWrap: true,
                           ),
                           const SizedBox(height: 2),
                           Text(
@@ -2491,9 +2491,9 @@ class _TasksScreenState extends State<TasksScreen> {
                                 style: TextStyle(
                                   fontSize: 12,
                                   color: statusColor,
+                                  height: 1.3,
                                 ),
-                                maxLines: 3,
-                                overflow: TextOverflow.ellipsis,
+                                softWrap: true,
                               ),
                             ],
                           ),
@@ -2510,19 +2510,13 @@ class _TasksScreenState extends State<TasksScreen> {
                     task.descriptionOnly!.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
-                    'Description',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
                     task.descriptionOnly!,
-                    style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                      height: 1.35,
+                    ),
+                    softWrap: true,
                   ),
                 ],
                 if (task.subtasksWithStatus.isNotEmpty) ...[
@@ -2561,8 +2555,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                         ? TextDecoration.lineThrough
                                         : null,
                                   ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
+                                  softWrap: true,
                                 ),
                               ),
                               const SizedBox(width: 6),
@@ -2680,8 +2673,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                         color: color,
                                         height: 1.3,
                                       ),
-                                      maxLines: 5,
-                                      overflow: TextOverflow.ellipsis,
+                                      softWrap: true,
                                     ),
                                   ],
                                 ),

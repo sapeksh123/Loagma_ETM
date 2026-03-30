@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'dart:async';
 import '../../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -167,6 +168,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                             ),
                           ),
+                          onChanged: (value) {
+                            final phone = value.trim();
+                            if (RegExp(r'^[0-9]{10}$').hasMatch(phone)) {
+                              unawaited(AuthService.prefetchUserByContact(phone));
+                            }
+                          },
                         ),
 
                         const SizedBox(height: 24),

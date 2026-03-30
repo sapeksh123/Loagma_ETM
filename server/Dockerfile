@@ -55,15 +55,15 @@ USER www-data
 # Recommended production defaults (can be overridden via Render env vars)
 ENV APP_ENV=production \
     APP_DEBUG=false \
-    LOG_CHANNEL=stderr
+    LOG_CHANNEL=stderr \
+    CACHE_STORE=redis \
+    QUEUE_CONNECTION=redis
 
 # Render sets PORT automatically; default to 8000 for local runs
 EXPOSE 8000
 
-# Cache configuration/routes/views on container start, then run the HTTP serve
+# Cache configuration/routes/views, migrate, and start queue/reverb/http processes.
+COPY --chown=www-data:www-data start-production.sh /app/start-production.sh
+RUN chmod +x /app/start-production.sh
 
-    CMD php artisan config:cache \
-    && php artisan route:cache \
-    && php artisan view:cache \
-    && php artisan reverb:start & \
-    php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
+CMD ["/app/start-production.sh"]

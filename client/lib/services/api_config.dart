@@ -26,7 +26,7 @@ class ApiConfig {
   /// --dart-define=LOCAL_API_BASE_URL=http://<your-lan-ip>:8000/api
   static const String _localNetworkBaseUrl = String.fromEnvironment(
     'LOCAL_API_BASE_URL',
-    defaultValue: 'http://192.168.1.9:8000/api',
+    defaultValue: 'http://192.168.1.8:8000/api',
   );
   static const String _localReverbHostOverride = String.fromEnvironment(
     'LOCAL_REVERB_HOST',
@@ -78,10 +78,37 @@ class ApiConfig {
       if (Platform.isAndroid) {
         return 'http://10.0.2.2:8000/api'; // Android emulator
       }
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+        return 'http://127.0.0.1:8000/api'; // Desktop app on same machine
+      }
       return _localNetworkBaseUrl; // Physical device or desktop app
     } catch (_) {
       return _localNetworkBaseUrl;
     }
+  }
+
+  /// Candidate base URLs used for local-development GET retries.
+  /// Order matters: fastest/common first, then LAN fallback.
+  static List<String> get localDevBaseUrlCandidates {
+    final candidates = <String>[];
+
+    void addCandidate(String value) {
+      final normalized = value.trim();
+      if (normalized.isEmpty) return;
+      if (!candidates.contains(normalized)) {
+        candidates.add(normalized);
+      }
+    }
+
+    addCandidate(baseUrl);
+
+    if (!useProduction && _baseUrlOverride.trim().isEmpty) {
+      addCandidate('http://127.0.0.1:8000/api');
+      addCandidate('http://10.0.2.2:8000/api');
+      addCandidate(_localNetworkBaseUrl);
+    }
+
+    return candidates;
   }
 
   // Endpoints

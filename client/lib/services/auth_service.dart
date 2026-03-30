@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,6 +20,12 @@ class AuthService {
 
   // Admin phone number
   static const String adminPhone = '9999999999';
+  static const Duration _prefetchTtl = Duration(minutes: 5);
+  static const Duration _authLookupTimeout = Duration(seconds: 4);
+  static const Duration _authLookupRetryTimeout = Duration(seconds: 9);
+  static const Duration _authWarmupWait = Duration(milliseconds: 700);
+  static final Map<String, _CachedUserEntry> _prefetchedUsersByPhone = {};
+  static final Map<String, Future<Map<String, dynamic>?>> _inflightUserLookups = {};
 
   /// Persist user session so app can restore on next launch.
   static Future<void> saveSession(User user) async {
@@ -40,40 +47,54 @@ class AuthService {
   }
 
   static Future<void> sendOtp(String phone) async {
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 1));
+    final normalizedPhone = normalizePhone(phone);
 
-    // In a real app, this would call your backend API
-    // For now, we just simulate success
-    return;
+    // Start prefetch immediately and wait briefly if it can finish quickly.
+    final warmup = _getOrFetchUserByContact(phone);
+    unawaited(warmup);
+    try {
+      await warmup.timeout(_authWarmupWait);
+    } catch (_) {
+      // Keep OTP navigation snappy even if network is slow.
+    }
+
+    // If a fresh prefetch exists already, keep it warm.
+    final existing = _prefetchedUsersByPhone[normalizedPhone];
+    if (existing != null && existing.expiresAt.isAfter(DateTime.now())) {
+      return;
+    }
+  }
+
+  static Future<void> prefetchUserByContact(String phone) async {
+    final normalizedPhone = normalizePhone(phone);
+    final existing = _prefetchedUsersByPhone[normalizedPhone];
+    if (existing != null && existing.expiresAt.isAfter(DateTime.now())) {
+      return;
+    }
+
+    final user = await _getOrFetchUserByContact(phone);
+    if (user == null) return;
+    _prefetchedUsersByPhone[normalizedPhone] = _CachedUserEntry(
+      user: user,
+      expiresAt: DateTime.now().add(_prefetchTtl),
+    );
   }
 
   static Future<User> verifyOtp(String phone, String otp) async {
-    // Simulate network delay
-    await Future.delayed(const Duration(seconds: 1));
-
     // Check if OTP is correct (4-digit master OTP)
     if (!masterOtps.contains(otp)) {
       throw Exception('Invalid OTP');
     }
 
-    dynamic match;
+    dynamic match = _getPrefetchedUser(phone);
 
     // First try dedicated backend lookup so pagination never blocks valid logins.
-    try {
-      final encodedPhone = Uri.encodeComponent(phone);
-      final response = await ApiService.get('/users/by-contact/$encodedPhone');
-      if (response['status'] == 'success' && response['data'] != null) {
-        match = response['data'];
-      }
-    } catch (_) {
-      // Fallback keeps compatibility with older backend versions.
+    if (match == null) {
+      match = await _getOrFetchUserByContact(phone);
     }
 
     if (match == null) {
-      final fallbackResponse = await ApiService.get(
-        '/users?search=$phone&per_page=50',
-      );
+      final fallbackResponse = await _fetchUsersFallback(phone);
       if (fallbackResponse['status'] != 'success') {
         throw Exception('Unable to fetch users from server');
       }
@@ -111,6 +132,73 @@ class AuthService {
       role: appRole,
       email: match['email']?.toString(),
     );
+  }
+
+  static Map<String, dynamic>? _getPrefetchedUser(String phone) {
+    final key = normalizePhone(phone);
+    final entry = _prefetchedUsersByPhone[key];
+    if (entry == null) return null;
+    if (entry.expiresAt.isBefore(DateTime.now())) {
+      _prefetchedUsersByPhone.remove(key);
+      return null;
+    }
+    return entry.user;
+  }
+
+  static Future<Map<String, dynamic>?> _fetchUserByContact(String phone) async {
+    return _getOrFetchUserByContact(phone);
+  }
+
+  static Future<Map<String, dynamic>?> _getOrFetchUserByContact(String phone) {
+    final key = normalizePhone(phone);
+    final existing = _inflightUserLookups[key];
+    if (existing != null) {
+      return existing;
+    }
+
+    final future = _fetchUserByContactNetwork(phone).whenComplete(() {
+      _inflightUserLookups.remove(key);
+    });
+    _inflightUserLookups[key] = future;
+    return future;
+  }
+
+  static Future<Map<String, dynamic>?> _fetchUserByContactNetwork(
+    String phone,
+  ) async {
+    final encodedPhone = Uri.encodeComponent(phone);
+    final endpoint = '/users/by-contact/$encodedPhone?view=minimal';
+    Map<String, dynamic>? response;
+
+    try {
+      response = await ApiService.get(endpoint, timeout: _authLookupTimeout);
+    } catch (_) {
+      // Retry once with a longer timeout for slow backend/network moments.
+      try {
+        response = await ApiService.get(
+          endpoint,
+          timeout: _authLookupRetryTimeout,
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+
+    if (response['status'] == 'success' && response['data'] != null) {
+      final user = Map<String, dynamic>.from(response['data'] as Map);
+      return user;
+    }
+
+    return null;
+  }
+
+  static Future<Map<String, dynamic>> _fetchUsersFallback(String phone) async {
+    final endpoint = '/users?search=$phone&per_page=20';
+    try {
+      return await ApiService.get(endpoint, timeout: _authLookupTimeout);
+    } catch (_) {
+      return ApiService.get(endpoint, timeout: _authLookupRetryTimeout);
+    }
   }
 
   static String normalizePhone(String value) {
@@ -213,6 +301,18 @@ class AuthService {
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyAuthUser);
+    _prefetchedUsersByPhone.clear();
+    _inflightUserLookups.clear();
     await Future.delayed(const Duration(milliseconds: 300));
   }
+}
+
+class _CachedUserEntry {
+  final Map<String, dynamic> user;
+  final DateTime expiresAt;
+
+  _CachedUserEntry({
+    required this.user,
+    required this.expiresAt,
+  });
 }

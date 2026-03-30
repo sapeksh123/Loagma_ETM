@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class UserController extends Controller
@@ -29,6 +30,20 @@ class UserController extends Controller
             'city',
             'state',
             'country',
+        ];
+    }
+
+    private function authUserSelectColumns(): array
+    {
+        return [
+            'id',
+            'name',
+            'email',
+            'contactNumber',
+            'roleId',
+            'employeeCode',
+            'isActive',
+            'lastLogin',
         ];
     }
 
@@ -85,6 +100,8 @@ class UserController extends Controller
         try {
             $rawInput = trim($contactNumber);
             $digitsOnly = preg_replace('/\D+/', '', $rawInput) ?? '';
+            $view = trim(strtolower((string) request()->query('view', 'full')));
+            $isMinimalView = in_array($view, ['minimal', 'auth'], true);
 
             if ($digitsOnly === '') {
                 return response()->json([
@@ -97,19 +114,55 @@ class UserController extends Controller
                 ? substr($digitsOnly, -10)
                 : $digitsOnly;
 
-            $normalizedContactSql = $this->normalizedContactSql();
+            $selectColumns = $isMinimalView ? $this->authUserSelectColumns() : $this->userSelectColumns();
 
-            $query = DB::table('users')->select($this->userSelectColumns());
+            // Fast path: index-friendly direct contact matches.
+            $candidates = array_values(array_unique(array_filter([
+                $rawInput,
+                $digitsOnly,
+                $normalizedTen,
+                '+91' . $normalizedTen,
+                '91' . $normalizedTen,
+            ])));
 
-            $query->whereRaw("{$normalizedContactSql} = ?", [$digitsOnly]);
+            if (!empty($candidates)) {
+                $directMatch = DB::table('users')
+                    ->select($selectColumns)
+                    ->whereIn('contactNumber', $candidates)
+                    ->orderBy('createdAt', 'desc')
+                    ->first();
 
-            if (strlen($normalizedTen) === 10) {
-                $query->orWhereRaw("RIGHT({$normalizedContactSql}, 10) = ?", [$normalizedTen]);
+                if ($directMatch) {
+                    return response()->json([
+                        'status' => 'success',
+                        'data' => $directMatch,
+                    ]);
+                }
             }
 
-            $user = $query->orderBy('createdAt', 'desc')->first();
+            $cacheKey = implode(':', [
+                'user-by-contact',
+                $isMinimalView ? 'minimal' : 'full',
+                $normalizedTen,
+            ]);
 
-            if (!$user) {
+            $cachedUser = Cache::remember($cacheKey, now()->addSeconds(30), function () use ($digitsOnly, $normalizedTen, $isMinimalView) {
+                $normalizedContactSql = $this->normalizedContactSql();
+
+                $query = DB::table('users')->select(
+                    $isMinimalView ? $this->authUserSelectColumns() : $this->userSelectColumns()
+                );
+
+                $query->whereRaw("{$normalizedContactSql} = ?", [$digitsOnly]);
+
+                if (strlen($normalizedTen) === 10) {
+                    $query->orWhereRaw("RIGHT({$normalizedContactSql}, 10) = ?", [$normalizedTen]);
+                }
+
+                return $query->orderBy('createdAt', 'desc')->first();
+            });
+
+            if (!$cachedUser) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'User not found',
@@ -118,7 +171,7 @@ class UserController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'data' => $user,
+                'data' => $cachedUser,
             ]);
         } catch (\Exception $e) {
             return response()->json([

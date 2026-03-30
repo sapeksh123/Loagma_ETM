@@ -114,8 +114,8 @@ class TaskController extends Controller
         return self::canUpdateStatusForActor($task, $actorUserId, $actorRole);
     }
 
-    /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response, plus attach daily history for daily tasks. */
-    private static function decodeTask($task)
+    /** Decode subtasks JSON and normalize to [{text, status, need_help_note?}] for API response, plus optional 7-day history for daily tasks. */
+    private static function decodeTask($task, bool $includeHistory = true)
     {
         if (!$task) return $task;
         $arr = (array) $task;
@@ -129,6 +129,7 @@ class TaskController extends Controller
 
         // Attach 7-day history for daily tasks
         if (
+            $includeHistory &&
             ($arr['category'] ?? null) === 'daily' &&
             isset($arr['id']) &&
             Schema::hasTable('task_daily_statuses') &&
@@ -309,6 +310,29 @@ class TaskController extends Controller
             $targetUserId = $request->query('target_user_id');
             $currentOnly = (string) $request->query('current_only', '0') === '1';
 
+            $view = strtolower((string) $request->query('view', 'full'));
+            $isListView = in_array($view, ['list', 'minimal'], true);
+            $includeHistory = (string) $request->query('include_history', $isListView ? '0' : '1') === '1';
+
+            $cursorCreatedAt = $request->query('cursor_created_at');
+            $cursorId = $request->query('cursor_id');
+            $useCursor = (string) $request->query('pagination_mode', '') === 'cursor'
+                || $cursorCreatedAt !== null
+                || $cursorId !== null;
+
+            $perPageInput = (int) $request->query('per_page', $useCursor ? 50 : 0);
+            $perPage = max(1, min($perPageInput, 200));
+            $page = max((int) $request->query('page', 1), 1);
+            $usePagination = !$useCursor && $perPageInput > 0;
+            $offset = ($page - 1) * $perPage;
+
+            if ($useCursor && ((bool) $cursorCreatedAt xor (bool) $cursorId)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'cursor_created_at and cursor_id must be provided together'
+                ], 422);
+            }
+
             if (!$userId || !$userRole) {
                 return response()->json([
                     'status' => 'error',
@@ -317,18 +341,39 @@ class TaskController extends Controller
             }
 
             if (in_array($userRole, ['admin', 'subadmin', 'techincharge'], true)) {
+                $selectColumns = $isListView
+                    ? [
+                        'tasks.id',
+                        'tasks.title',
+                        'tasks.category',
+                        'tasks.priority',
+                        'tasks.status',
+                        'tasks.is_current',
+                        'tasks.deadline_date',
+                        'tasks.deadline_time',
+                        'tasks.created_by',
+                        'tasks.assigned_to',
+                        'tasks.createdAt',
+                        'tasks.updatedAt',
+                        'creator.name as creator_name',
+                        'creator.roleId as creator_role_id',
+                        'assignee.name as assignee_name',
+                        'assignee.employeeCode as assignee_code',
+                    ]
+                    : [
+                        'tasks.*',
+                        'creator.name as creator_name',
+                        'creator.roleId as creator_role_id',
+                        'assignee.name as assignee_name',
+                        'assignee.employeeCode as assignee_code',
+                    ];
+
                 // Manager roles see all non-personal tasks.
                 // Optional target_user_id narrows results to one employee scope.
                 $query = DB::table('tasks')
                     ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
                     ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
-                    ->select(
-                        'tasks.*',
-                        'creator.name as creator_name',
-                        'creator.roleId as creator_role_id',
-                        'assignee.name as assignee_name',
-                        'assignee.employeeCode as assignee_code'
-                    )
+                    ->select(...$selectColumns)
                     ->where('tasks.category', '!=', 'personal');
 
                 if (Schema::hasTable('task_hidden_items')) {
@@ -348,47 +393,122 @@ class TaskController extends Controller
                 if ($currentOnly && Schema::hasColumn('tasks', 'is_current')) {
                     $query->where('tasks.is_current', 1);
                 }
-
-                $tasks = $query->orderBy('tasks.createdAt', 'desc')->get();
             } else {
-                // Employee sees their own tasks (assigned to them OR created by them).
-                $tasks = DB::table('tasks')
-                    ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
-                    ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
-                    ->select(
+                $selectColumns = $isListView
+                    ? [
+                        'tasks.id',
+                        'tasks.title',
+                        'tasks.category',
+                        'tasks.priority',
+                        'tasks.status',
+                        'tasks.is_current',
+                        'tasks.deadline_date',
+                        'tasks.deadline_time',
+                        'tasks.created_by',
+                        'tasks.assigned_to',
+                        'tasks.createdAt',
+                        'tasks.updatedAt',
+                        'creator.name as creator_name',
+                        'creator.roleId as creator_role_id',
+                        'assignee.name as assignee_name',
+                        'assignee.employeeCode as assignee_code',
+                    ]
+                    : [
                         'tasks.*',
                         'creator.name as creator_name',
                         'creator.roleId as creator_role_id',
-                        'assignee.name as assignee_name'
-                    )
+                        'assignee.name as assignee_name',
+                        'assignee.employeeCode as assignee_code',
+                    ];
+
+                // Employee sees their own tasks (assigned to them OR created by them).
+                $query = DB::table('tasks')
+                    ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
+                    ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
+                    ->select(...$selectColumns)
                     ->where(function ($query) use ($userId) {
                         $query->where('tasks.assigned_to', $userId)
                             ->orWhere('tasks.created_by', $userId);
                     });
 
                 if (Schema::hasTable('task_hidden_items')) {
-                    $tasks->leftJoin('task_hidden_items as hidden', function ($join) use ($userId) {
+                    $query->leftJoin('task_hidden_items as hidden', function ($join) use ($userId) {
                         $join->on('hidden.task_id', '=', 'tasks.id')
                             ->where('hidden.hidden_by_user_id', '=', $userId);
                     })->whereNull('hidden.id');
                 }
 
-                $tasks = $tasks
-                    ->when($currentOnly && Schema::hasColumn('tasks', 'is_current'), function ($q) {
-                        $q->where('tasks.is_current', 1);
-                    })
+                $query->when($currentOnly && Schema::hasColumn('tasks', 'is_current'), function ($q) {
+                    $q->where('tasks.is_current', 1);
+                });
+            }
+
+            $total = null;
+            if ($useCursor) {
+                if ($cursorCreatedAt && $cursorId) {
+                    $query->where(function ($q) use ($cursorCreatedAt, $cursorId) {
+                        $q->where('tasks.createdAt', '<', $cursorCreatedAt)
+                            ->orWhere(function ($q2) use ($cursorCreatedAt, $cursorId) {
+                                $q2->where('tasks.createdAt', '=', $cursorCreatedAt)
+                                    ->where('tasks.id', '<', $cursorId);
+                            });
+                    });
+                }
+
+                $tasks = $query
                     ->orderBy('tasks.createdAt', 'desc')
+                    ->orderBy('tasks.id', 'desc')
+                    ->limit($perPage)
+                    ->get();
+            } elseif ($usePagination) {
+                $total = (clone $query)->count('tasks.id');
+                $tasks = $query
+                    ->orderBy('tasks.createdAt', 'desc')
+                    ->orderBy('tasks.id', 'desc')
+                    ->offset($offset)
+                    ->limit($perPage)
+                    ->get();
+            } else {
+                $tasks = $query
+                    ->orderBy('tasks.createdAt', 'desc')
+                    ->orderBy('tasks.id', 'desc')
                     ->get();
             }
 
-            $data = $tasks->map(function ($task) {
-                return self::decodeTask($task);
+            $data = $tasks->map(function ($task) use ($includeHistory) {
+                return self::decodeTask($task, $includeHistory);
             })->values()->all();
 
-            return response()->json([
+            $payload = [
                 'status' => 'success',
                 'data' => $data
-            ]);
+            ];
+
+            if ($useCursor) {
+                $hasMore = count($data) === $perPage;
+                $lastItem = $hasMore ? end($data) : null;
+                $payload['meta'] = [
+                    'pagination_mode' => 'cursor',
+                    'per_page' => $perPage,
+                    'has_more' => $hasMore,
+                    'next_cursor' => ($hasMore && is_array($lastItem))
+                        ? [
+                            'cursor_created_at' => $lastItem['createdAt'] ?? null,
+                            'cursor_id' => $lastItem['id'] ?? null,
+                        ]
+                        : null,
+                ];
+            } elseif ($usePagination) {
+                $payload['meta'] = [
+                    'pagination_mode' => 'page',
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'has_more' => ($offset + count($data)) < $total,
+                ];
+            }
+
+            return response()->json($payload);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -405,6 +525,29 @@ class TaskController extends Controller
             $userId = $actor['user_id'];
             $userRole = $actor['user_role'];
 
+            $view = strtolower((string) $request->query('view', 'full'));
+            $isListView = in_array($view, ['list', 'minimal'], true);
+            $includeHistory = (string) $request->query('include_history', $isListView ? '0' : '1') === '1';
+
+            $cursorHiddenAt = $request->query('cursor_hidden_at');
+            $cursorTaskId = $request->query('cursor_task_id');
+            $useCursor = (string) $request->query('pagination_mode', '') === 'cursor'
+                || $cursorHiddenAt !== null
+                || $cursorTaskId !== null;
+
+            $perPageInput = (int) $request->query('per_page', $useCursor ? 50 : 0);
+            $perPage = max(1, min($perPageInput, 200));
+            $page = max((int) $request->query('page', 1), 1);
+            $usePagination = !$useCursor && $perPageInput > 0;
+            $offset = ($page - 1) * $perPage;
+
+            if ($useCursor && ((bool) $cursorHiddenAt xor (bool) $cursorTaskId)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'cursor_hidden_at and cursor_task_id must be provided together'
+                ], 422);
+            }
+
             if (!$userId || !$userRole) {
                 return response()->json([
                     'status' => 'error',
@@ -419,30 +562,103 @@ class TaskController extends Controller
                 ]);
             }
 
-            $tasks = DB::table('task_hidden_items as hidden')
-                ->join('tasks', 'hidden.task_id', '=', 'tasks.id')
-                ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
-                ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
-                ->select(
+            $selectColumns = $isListView
+                ? [
+                    'tasks.id',
+                    'tasks.title',
+                    'tasks.category',
+                    'tasks.priority',
+                    'tasks.status',
+                    'tasks.is_current',
+                    'tasks.deadline_date',
+                    'tasks.deadline_time',
+                    'tasks.created_by',
+                    'tasks.assigned_to',
+                    'tasks.createdAt',
+                    'tasks.updatedAt',
+                    'creator.name as creator_name',
+                    'creator.roleId as creator_role_id',
+                    'assignee.name as assignee_name',
+                    'assignee.employeeCode as assignee_code',
+                    'hidden.created_at as hidden_at',
+                ]
+                : [
                     'tasks.*',
                     'creator.name as creator_name',
                     'creator.roleId as creator_role_id',
                     'assignee.name as assignee_name',
                     'assignee.employeeCode as assignee_code',
-                    'hidden.created_at as hidden_at'
-                )
+                    'hidden.created_at as hidden_at',
+                ];
+
+            $query = DB::table('task_hidden_items as hidden')
+                ->join('tasks', 'hidden.task_id', '=', 'tasks.id')
+                ->leftJoin('users as creator', 'tasks.created_by', '=', 'creator.id')
+                ->leftJoin('users as assignee', 'tasks.assigned_to', '=', 'assignee.id')
+                ->select(...$selectColumns)
                 ->where('hidden.hidden_by_user_id', $userId)
                 ->orderBy('hidden.created_at', 'desc')
-                ->get();
+                ->orderBy('tasks.id', 'desc');
 
-            $data = $tasks->map(function ($task) {
-                return self::decodeTask($task);
+            $total = null;
+            if ($useCursor) {
+                if ($cursorHiddenAt && $cursorTaskId) {
+                    $query->where(function ($q) use ($cursorHiddenAt, $cursorTaskId) {
+                        $q->where('hidden.created_at', '<', $cursorHiddenAt)
+                            ->orWhere(function ($q2) use ($cursorHiddenAt, $cursorTaskId) {
+                                $q2->where('hidden.created_at', '=', $cursorHiddenAt)
+                                    ->where('tasks.id', '<', $cursorTaskId);
+                            });
+                    });
+                }
+
+                $tasks = $query
+                    ->limit($perPage)
+                    ->get();
+            } elseif ($usePagination) {
+                $total = (clone $query)->count('tasks.id');
+                $tasks = $query
+                    ->offset($offset)
+                    ->limit($perPage)
+                    ->get();
+            } else {
+                $tasks = $query->get();
+            }
+
+            $data = $tasks->map(function ($task) use ($includeHistory) {
+                return self::decodeTask($task, $includeHistory);
             })->values()->all();
 
-            return response()->json([
+            $payload = [
                 'status' => 'success',
                 'data' => $data
-            ]);
+            ];
+
+            if ($useCursor) {
+                $hasMore = count($data) === $perPage;
+                $lastItem = $hasMore ? end($data) : null;
+                $payload['meta'] = [
+                    'pagination_mode' => 'cursor',
+                    'per_page' => $perPage,
+                    'has_more' => $hasMore,
+                    'next_cursor' => ($hasMore && is_array($lastItem))
+                        ? [
+                            'cursor_hidden_at' => $lastItem['hidden_at'] ?? null,
+                            'cursor_task_id' => $lastItem['id'] ?? null,
+                        ]
+                        : null,
+                ];
+            } elseif ($usePagination) {
+                $payload['meta'] = [
+                    'pagination_mode' => 'page',
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'has_more' => ($offset + count($data)) < $total,
+                ];
+            }
+
+            return response()->json($payload);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',

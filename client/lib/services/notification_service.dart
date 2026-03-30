@@ -4,8 +4,14 @@ import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
 import '../models/notification_model.dart';
+import 'local_cache_service.dart';
 
 class NotificationService {
+  static const Duration _notificationsCacheTtl = Duration(seconds: 20);
+  static final Map<String, Future<List<NotificationModel>>> _pendingFetches = {};
+
+  static String _cacheKey(String employeeId) => 'notifications|$employeeId';
+
   static Future<void> sendTaskReminder({
     required String senderRole,
     required String employeeId,
@@ -55,30 +61,63 @@ class NotificationService {
   static Future<List<NotificationModel>> fetchNotifications(
     String employeeId,
   ) async {
-    final uri = Uri.parse(
-      '${ApiConfig.notificationsUrl}?employee_id=$employeeId',
+    final cacheKey = _cacheKey(employeeId);
+    final cached = await LocalCacheService.getJsonList(
+      cacheKey,
+      ttl: _notificationsCacheTtl,
     );
-
-    final response = await http.get(
-      uri,
-      headers: {'Content-Type': 'application/json'},
-    );
-
-    if (response.statusCode != 200) {
-      throw Exception('Failed to load notifications');
-    }
-
-    final data = jsonDecode(response.body) as Map<String, dynamic>?;
-    final list = data?['data'];
-    if (list is List) {
-      return list
+    if (cached != null) {
+      return cached
           .whereType<Map>()
-          .map((e) => NotificationModel.fromJson(
-                Map<String, dynamic>.from(e),
-              ))
+          .map((e) => NotificationModel.fromJson(Map<String, dynamic>.from(e)))
           .toList();
     }
-    return [];
+
+    final inFlight = _pendingFetches[cacheKey];
+    if (inFlight != null) {
+      return inFlight;
+    }
+
+    final future = () async {
+      final uri = Uri.parse(
+        '${ApiConfig.notificationsUrl}?employee_id=$employeeId&per_page=100&page=1',
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to load notifications');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>?;
+      final list = data?['data'];
+      if (list is List) {
+        await LocalCacheService.putJson(
+          cacheKey,
+          list,
+          ttl: _notificationsCacheTtl,
+        );
+
+        return list
+            .whereType<Map>()
+            .map((e) => NotificationModel.fromJson(
+                  Map<String, dynamic>.from(e),
+                ))
+            .toList();
+      }
+      return <NotificationModel>[];
+    }();
+
+    _pendingFetches[cacheKey] = future;
+
+    try {
+      return await future;
+    } finally {
+      _pendingFetches.remove(cacheKey);
+    }
   }
 
   static Future<void> markNotificationRead({
@@ -98,6 +137,8 @@ class NotificationService {
     if (response.statusCode != 200) {
       throw Exception('Failed to update notification');
     }
+
+    await LocalCacheService.invalidatePrefix('notifications|$employeeId');
   }
 }
 

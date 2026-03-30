@@ -46,7 +46,7 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _checkSessionAndNavigate() async {
-    await Future.delayed(const Duration(seconds: 2));
+    await Future.delayed(const Duration(milliseconds: 450));
     if (!mounted) return;
     final user = await AuthService.getStoredUser();
     if (!mounted) return;

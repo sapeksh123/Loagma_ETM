@@ -21,6 +21,9 @@ class NotificationController extends Controller
     {
         try {
             $employeeId = $request->query('employee_id');
+            $perPage = max(1, min((int) $request->query('per_page', 50), 200));
+            $page = max((int) $request->query('page', 1), 1);
+            $offset = ($page - 1) * $perPage;
 
             if (!$employeeId) {
                 return response()->json([
@@ -29,14 +32,26 @@ class NotificationController extends Controller
                 ], 400);
             }
 
-            $notifications = DB::table('notifications')
-                ->where('employee_id', $employeeId)
+            $baseQuery = DB::table('notifications')
+                ->where('employee_id', $employeeId);
+
+            $total = (clone $baseQuery)->count();
+
+            $notifications = (clone $baseQuery)
                 ->orderBy('created_at', 'desc')
+                ->offset($offset)
+                ->limit($perPage)
                 ->get();
 
             return response()->json([
                 'status' => 'success',
                 'data' => $notifications,
+                'meta' => [
+                    'page' => $page,
+                    'per_page' => $perPage,
+                    'total' => $total,
+                    'has_more' => ($offset + $notifications->count()) < $total,
+                ],
             ]);
         } catch (\Exception $e) {
             return response()->json([

@@ -97,3 +97,44 @@ For the realtime chat module to work smoothly in production, verify all of the f
    `POST /api/chat/threads/{id}/receipts`
    `GET /api/chat/threads/{id}/messages?before_sort_key=...`
    `GET /api/chat/threads/{id}/messages?after_sort_key=...`
+
+## Performance Verification Commands
+
+Run migrations first:
+
+`php artisan migrate --force`
+
+Verify Redis runtime values:
+
+`php artisan tinker --execute "dump(config('cache.default')); dump(config('queue.default'));"`
+
+Expected output:
+
+- `cache.default` => `redis`
+- `queue.default` => `redis`
+
+Verify index usage with EXPLAIN in Tinker:
+
+`php artisan tinker --execute "dump(DB::select('EXPLAIN SELECT tasks.id,tasks.created_by,tasks.assigned_to,tasks.status,tasks.category,tasks.createdAt FROM tasks WHERE tasks.category != ? ORDER BY tasks.createdAt DESC LIMIT 50', ['personal']));"`
+
+`php artisan tinker --execute "dump(DB::select('EXPLAIN SELECT a.id,a.user_id,a.date FROM attendances a WHERE a.date = ? ORDER BY a.user_id LIMIT 100', [date('Y-m-d')]));"`
+
+`php artisan tinker --execute "dump(DB::select('EXPLAIN SELECT id,employee_id,is_read,created_at FROM notifications WHERE employee_id = ? ORDER BY created_at DESC LIMIT 100', ['<employee-id>']));"`
+
+Start workers (if not using container startup script):
+
+`php artisan queue:work --sleep=1 --tries=3 --timeout=120`
+
+`php artisan reverb:start --host=0.0.0.0 --port=8080`
+
+## Task API Performance Parameters
+
+Use these query params on `GET /api/tasks` and `GET /api/tasks/hidden` to reduce payload and paginate efficiently.
+
+- `view=minimal` or `view=list`: returns lightweight task rows (list-friendly fields).
+- `include_history=0`: skips expensive daily `task_history` and `subtask_history` enrichment.
+- `pagination_mode=cursor` with cursor params for keyset pagination:
+   - `GET /api/tasks?...&pagination_mode=cursor&per_page=50`
+   - next calls use `cursor_created_at` and `cursor_id` from `meta.next_cursor`.
+   - hidden tasks use `cursor_hidden_at` and `cursor_task_id`.
+- `per_page` and `page`: still supported for offset pagination mode.

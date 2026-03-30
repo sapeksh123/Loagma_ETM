@@ -10,6 +10,7 @@ import 'attendance_screen.dart';
 import 'admin_chat_list_screen.dart';
 import 'notepad_list_screen.dart';
 import '../../widgets/developer_switch_dialog.dart';
+import '../../widgets/calculator_dialog.dart';
 import '../employee/employee_dashboard.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -105,7 +106,12 @@ class _AdminDashboardState extends State<AdminDashboard> {
       // fall back to computing it from the task list.
       if (!hasBreakdown && widget.userId != null && widget.userId!.isNotEmpty) {
         final tasksResponse =
-            await TaskService.getTasks(widget.userId!, widget.userRole);
+            await TaskService.getTasks(
+              widget.userId!,
+              widget.userRole,
+              view: 'minimal',
+              includeHistory: false,
+            );
         if (tasksResponse['status'] == 'success') {
           final List<dynamic> tasksData = tasksResponse['data'] ?? [];
           final tasks =
@@ -275,6 +281,18 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           elevation: 0,
           actions: [
+            IconButton(
+              icon: const Icon(Icons.calculate_outlined),
+              tooltip: 'Calculator',
+              onPressed: () async {
+                // Show calculator popup
+                await showDialog(
+                  context: context,
+                  barrierDismissible: true,
+                  builder: (_) => const CalculatorDialog(),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.chat_bubble_outline),
               tooltip: 'Chat',

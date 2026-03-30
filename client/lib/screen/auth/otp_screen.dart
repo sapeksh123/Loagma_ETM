@@ -19,6 +19,9 @@ class _OtpScreenState extends State<OtpScreen> {
   final List<FocusNode> _focusNodes = List.generate(4, (_) => FocusNode());
   bool _isLoading = false;
 
+  bool get _isOtpComplete =>
+      _otpControllers.every((controller) => controller.text.length == 1);
+
   @override
   void dispose() {
     for (var controller in _otpControllers) {
@@ -83,6 +86,8 @@ class _OtpScreenState extends State<OtpScreen> {
       var message = e.toString().replaceFirst('Exception: ', '').trim();
       if (message == 'User not found') {
         message = 'User not found for this phone number.\nPlease contact admin.';
+      } else if (message.toLowerCase().contains('timeout')) {
+        message = 'Network is slow right now. Please try Verify again.';
       } else if (message.isEmpty) {
         message = 'Verification failed. Please try again.';
       }
@@ -212,6 +217,11 @@ class _OtpScreenState extends State<OtpScreen> {
                                     _focusNodes[index + 1].requestFocus();
                                   } else if (value.isEmpty && index > 0) {
                                     _focusNodes[index - 1].requestFocus();
+                                  }
+
+                                  if (!_isLoading && _isOtpComplete) {
+                                    FocusScope.of(context).unfocus();
+                                    _verifyOtp();
                                   }
                                 },
                               ),
