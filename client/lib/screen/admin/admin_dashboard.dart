@@ -10,7 +10,8 @@ import 'attendance_screen.dart';
 import 'admin_chat_list_screen.dart';
 import 'notepad_list_screen.dart';
 import '../../widgets/developer_switch_dialog.dart';
-import '../../widgets/calculator_dialog.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 import '../employee/employee_dashboard.dart';
 
 class AdminDashboard extends StatefulWidget {
@@ -281,18 +282,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           elevation: 0,
           actions: [
-            IconButton(
-              icon: const Icon(Icons.calculate_outlined),
-              tooltip: 'Calculator',
-              onPressed: () async {
-                // Show calculator popup
-                await showDialog(
-                  context: context,
-                  barrierDismissible: true,
-                  builder: (_) => const CalculatorDialog(),
-                );
-              },
-            ),
+            buildCalculatorAppBarAction(context),
             IconButton(
               icon: const Icon(Icons.chat_bubble_outline),
               tooltip: 'Chat',
@@ -319,8 +309,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
             ),
             IconButton(
               icon: const Icon(Icons.note_add_outlined),
-              onPressed: () {
-                setState(() => _selectedIndex = 5);
+              tooltip: 'Notepad',
+              onPressed: () async {
+                await showNotepadPopup(
+                  context,
+                  userId: widget.userId,
+                  userRole: widget.userRole,
+                  userName: widget.userName,
+                );
               },
             ),
             IconButton(

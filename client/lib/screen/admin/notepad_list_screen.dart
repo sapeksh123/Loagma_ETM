@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/note_model.dart';
 import '../../services/note_service.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 import 'notepad_screen.dart';
 
 class NotepadListScreen extends StatefulWidget {
@@ -10,6 +12,8 @@ class NotepadListScreen extends StatefulWidget {
   final String userRole;
   final String? userName;
   final bool showAppBar;
+  final bool showNotepadAction;
+  final bool autoOpenLastOpenedNote;
 
   const NotepadListScreen({
     super.key,
@@ -17,6 +21,8 @@ class NotepadListScreen extends StatefulWidget {
     required this.userRole,
     this.userName,
     this.showAppBar = false,
+    this.showNotepadAction = true,
+    this.autoOpenLastOpenedNote = true,
   });
 
   @override
@@ -35,7 +41,11 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
   @override
   void initState() {
     super.initState();
-    _checkAndOpenLastNote();
+    if (widget.autoOpenLastOpenedNote) {
+      _checkAndOpenLastNote();
+    } else {
+      _loadNotes();
+    }
   }
 
   Future<void> _checkAndOpenLastNote() async {
@@ -60,13 +70,17 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     }
   }
 
-  Future<void> _loadNotes() async {
+  Future<void> _loadNotes({bool forceRefresh = false}) async {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
     try {
-      final list = await NoteService.listNotes(widget.userId, widget.userRole);
+      final list = await NoteService.listNotes(
+        widget.userId,
+        widget.userRole,
+        forceRefresh: forceRefresh,
+      );
       final grouped = _groupNotesByFolder(list);
       if (!mounted) return;
       setState(() {
@@ -307,7 +321,8 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
         content: '',
       );
       if (!mounted) return;
-      await _loadNotes();
+      NoteService.invalidateNotesCache(widget.userId, widget.userRole);
+      await _loadNotes(forceRefresh: true);
       if (!mounted) return;
       _openNoteDetail(note);
     } catch (e) {
@@ -342,7 +357,7 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
         ),
       ),
     );
-    _loadNotes();
+    _loadNotes(forceRefresh: true);
   }
 
   String _lastNoteKey() => 'notepad:last_opened:${widget.userId}:${widget.userRole}';
@@ -378,7 +393,8 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     try {
       await NoteService.deleteNote(widget.userId, widget.userRole, note.id);
       if (!mounted) return;
-      await _loadNotes();
+      NoteService.invalidateNotesCache(widget.userId, widget.userRole);
+      await _loadNotes(forceRefresh: true);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -410,6 +426,16 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
             elevation: 0,
             surfaceTintColor: Colors.transparent,
             title: const Text('Notepad'),
+            actions: [
+              if (widget.showNotepadAction)
+                buildNotepadAppBarAction(
+                  context,
+                  userId: widget.userId,
+                  userRole: widget.userRole,
+                  userName: widget.userName,
+                ),
+              buildCalculatorAppBarAction(context),
+            ],
           )
         : null;
 
@@ -510,7 +536,7 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: RefreshIndicator(
       color: _gold,
-      onRefresh: _loadNotes,
+      onRefresh: () => _loadNotes(forceRefresh: true),
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 80),
         children: [

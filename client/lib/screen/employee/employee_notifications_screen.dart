@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/notification_model.dart';
 import '../../services/notification_service.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 import 'employee_chat_thread_screen.dart';
 
 class EmployeeNotificationsScreen extends StatefulWidget {
@@ -111,6 +113,14 @@ class _EmployeeNotificationsScreenState
           'Notifications',
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
+        actions: [
+          buildNotepadAppBarAction(
+            context,
+            userId: widget.userId,
+            userRole: widget.userRole,
+          ),
+          buildCalculatorAppBarAction(context),
+        ],
       ),
       body: SafeArea(
         top: false,

@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/note_model.dart';
 import '../../services/note_service.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 
 class NotepadScreen extends StatefulWidget {
   final String userId;
@@ -350,6 +352,13 @@ class _NotepadScreenState extends State<NotepadScreen> {
             overflow: TextOverflow.ellipsis,
           ),
           actions: [
+            buildNotepadAppBarAction(
+              context,
+              userId: widget.userId,
+              userRole: widget.userRole,
+              userName: widget.userName,
+            ),
+            buildCalculatorAppBarAction(context),
             IconButton(
               icon: const Icon(Icons.delete_outline),
               onPressed: _deleteNote,

@@ -59,7 +59,14 @@ const _buttons = [
 // Main widget
 // ─────────────────────────────────────────────
 class CalculatorDialog extends StatefulWidget {
-  const CalculatorDialog({super.key});
+  final VoidCallback? onClose;
+  final bool asDialog;
+
+  const CalculatorDialog({
+    super.key,
+    this.onClose,
+    this.asDialog = true,
+  });
 
   static Future<double?> show(BuildContext context) {
     return showDialog<double>(
@@ -219,10 +226,18 @@ class _CalculatorDialogState extends State<CalculatorDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: _CalcTheme.dialogBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      elevation: 20,
+    final content = Container(
+      decoration: BoxDecoration(
+        color: _CalcTheme.dialogBg,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.18),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
         child: Column(
@@ -238,6 +253,17 @@ class _CalculatorDialogState extends State<CalculatorDialog> {
           ],
         ),
       ),
+    );
+
+    if (!widget.asDialog) {
+      return Material(color: Colors.transparent, child: content);
+    }
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      child: content,
     );
   }
 
@@ -255,7 +281,13 @@ class _CalculatorDialogState extends State<CalculatorDialog> {
           ),
         ),
         _NeuButton(
-          onTap: () => Navigator.of(context).pop(),
+          onTap: () {
+            if (widget.onClose != null) {
+              widget.onClose!.call();
+            } else {
+              Navigator.of(context).pop();
+            }
+          },
           type: _BtnType.special,
           size: 36,
           child: const Icon(Icons.close, size: 16, color: _CalcTheme.textSecondary),

@@ -22,6 +22,8 @@ class DeveloperSwitchDialog extends StatefulWidget {
 
 class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
   static List<User> _cachedFirstPage = [];
+  static const Color _gold = Color(0xFFCEB56E);
+  static const Color _darkAction = Color(0xFF5F4D2A);
 
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -189,6 +191,8 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
     final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
+            backgroundColor: const Color(0xFFF6F1E6),
+            surfaceTintColor: Colors.transparent,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(14),
             ),
@@ -199,10 +203,22 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.of(ctx).pop(false),
+                style: TextButton.styleFrom(
+                  foregroundColor: const Color(0xFF7A6A48),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                ),
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
                 onPressed: () => Navigator.of(ctx).pop(true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _darkAction,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  elevation: 0,
+                ),
                 child: const Text('Switch'),
               ),
             ],
@@ -230,10 +246,12 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
+      backgroundColor: const Color(0xFFF6F1E6),
+      surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Row(
         children: [
-          Icon(Icons.developer_mode, color: Color(0xFFceb56e)),
+          Icon(Icons.developer_mode, color: _gold),
           SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -274,6 +292,14 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
                         isDense: true,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: Color(0xFF9D927B)),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                          borderSide: const BorderSide(color: _darkAction, width: 1.4),
                         ),
                       ),
                     ),
@@ -384,6 +410,15 @@ class _DeveloperSwitchDialogState extends State<DeveloperSwitchDialog> {
           onPressed: _isSwitching
               ? null
               : () => Navigator.of(context).pop(),
+          style: TextButton.styleFrom(
+            backgroundColor: _darkAction,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: _darkAction.withValues(alpha: 0.5),
+            disabledForegroundColor: Colors.white.withValues(alpha: 0.9),
+            textStyle: const TextStyle(fontWeight: FontWeight.w600),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+          ),
           child: const Text('Close'),
         ),
       ],

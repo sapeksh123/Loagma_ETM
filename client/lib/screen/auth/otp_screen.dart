@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../services/api_service.dart';
 import '../../services/auth_service.dart';
 import '../admin/admin_dashboard.dart';
 import '../employee/employee_dashboard.dart';
@@ -84,10 +85,19 @@ class _OtpScreenState extends State<OtpScreen> {
       if (!mounted) return;
 
       var message = e.toString().replaceFirst('Exception: ', '').trim();
-      if (message == 'User not found') {
-        message = 'User not found for this phone number.\nPlease contact admin.';
-      } else if (message.toLowerCase().contains('timeout')) {
+      if (e is ApiTimeoutException ||
+          message.toLowerCase().contains('timeout')) {
         message = 'Network is slow right now. Please try Verify again.';
+      } else if (e is ApiNetworkException ||
+          message.toLowerCase().contains('unable to reach server') ||
+          message.toLowerCase().contains('failed host lookup') ||
+          message.toLowerCase().contains('socket')) {
+        message =
+            'Cannot connect to server right now. Please check your internet and try again.';
+      } else if (message == 'User not found') {
+        message = 'User not found for this phone number.\nPlease contact admin.';
+      } else if (e is ApiServerException && e.statusCode >= 500) {
+        message = 'Server is busy right now. Please try again in a moment.';
       } else if (message.isEmpty) {
         message = 'Verification failed. Please try again.';
       }

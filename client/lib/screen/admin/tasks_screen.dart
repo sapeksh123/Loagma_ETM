@@ -1182,19 +1182,37 @@ class _TasksScreenState extends State<TasksScreen> {
       context: scaffoldContext,
       barrierDismissible: false,
       builder: (ctx) {
+        const dialogBg = Color(0xFFF6F1E6);
+        const accent = Color(0xFFCEB56E);
+        const darkAction = Color(0xFF5F4D2A);
         return AlertDialog(
+          backgroundColor: dialogBg,
+          surfaceTintColor: Colors.transparent,
+          elevation: 2,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
+          titlePadding: const EdgeInsets.fromLTRB(22, 20, 22, 8),
+          contentPadding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(12, 4, 12, 14),
           title: Row(
             children: [
               const Icon(
                 Icons.sticky_note_2_outlined,
-                color: Colors.brown,
+                color: darkAction,
                 size: 26,
               ),
               const SizedBox(width: 10),
-              Text(title),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF222222),
+                  ),
+                ),
+              ),
             ],
           ),
           content: SingleChildScrollView(
@@ -1216,11 +1234,21 @@ class _TasksScreenState extends State<TasksScreen> {
                   autofocus: true,
                   decoration: InputDecoration(
                     hintText: 'Type note here...',
+                    hintStyle: TextStyle(color: Colors.grey.shade300),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: accent),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: accent),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: const BorderSide(color: darkAction, width: 1.6),
                     ),
                     filled: true,
-                    fillColor: Colors.grey.shade50,
+                    fillColor: Colors.white.withValues(alpha: 0.75),
                   ),
                 ),
               ],
@@ -1229,6 +1257,10 @@ class _TasksScreenState extends State<TasksScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF7A6A48),
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              ),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
@@ -1245,6 +1277,17 @@ class _TasksScreenState extends State<TasksScreen> {
                 }
                 Navigator.pop(ctx, note);
               },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: darkAction,
+                foregroundColor: Colors.white,
+                disabledBackgroundColor: darkAction.withValues(alpha: 0.5),
+                disabledForegroundColor: Colors.white.withValues(alpha: 0.9),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                elevation: 0,
+              ),
               child: const Text('Save'),
             ),
           ],
@@ -1640,7 +1683,7 @@ class _TasksScreenState extends State<TasksScreen> {
     if (_isManagerRole && _viewMode == 'self') {
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         decoration: BoxDecoration(
           color: Colors.white,
           boxShadow: [
@@ -1654,124 +1697,79 @@ class _TasksScreenState extends State<TasksScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.tune,
-                  size: 18,
-                  color: Colors.grey.shade700,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Filters',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade800,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        _buildFilterSummary(),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(
-                    _filtersExpanded
-                        ? Icons.keyboard_arrow_up
-                        : Icons.keyboard_arrow_down,
-                    size: 20,
-                    color: const Color(0xFF9E9E9E),
-                  ),
-                  onPressed: () {
-                    setState(() => _filtersExpanded = !_filtersExpanded);
-                  },
-                ),
-                IconButton(
-                  tooltip: 'Hidden tasks',
-                  icon: const Icon(Icons.visibility_off_outlined, size: 20),
-                  onPressed: _openHiddenTasks,
-                ),
-              ],
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildCategoryChip('All', 'all'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Daily', 'daily'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Project', 'project'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Personal', 'personal'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Monthly', 'monthly'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Quarterly', 'quarterly'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Yearly', 'yearly'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Other', 'other'),
+                ],
+              ),
             ),
-            if (_filtersExpanded) ...[
-              const SizedBox(height: 8),
-              Text(
-                'Status',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800,
-                ),
+            const SizedBox(height: 8),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildFilterChip('All', 'all'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Assigned', 'assigned'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('In Progress', 'in_progress'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Completed', 'completed'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Paused', 'paused'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Hold', 'hold'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Need Help', 'need_help'),
+                  const SizedBox(width: 8),
+                  _buildFilterChip('Ignore', 'ignore'),
+                  const SizedBox(width: 12),
+                  OutlinedButton(
+                    onPressed: () {
+                      setState(() => _selectedFilter = 'in_progress');
+                    },
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: Colors.grey.shade700,
+                      side: BorderSide(color: Colors.grey.shade400),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('Current working'),
+                  ),
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: _openHiddenTasks,
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      foregroundColor: Colors.deepOrange,
+                      side: BorderSide(color: Colors.grey.shade400),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                    child: const Text('Hidden'),
+                  ),
+                ],
               ),
-              const SizedBox(height: 6),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildFilterChip('All', 'all'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Assigned', 'assigned'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('In Progress', 'in_progress'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Completed', 'completed'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Paused', 'paused'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Hold', 'hold'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Need Help', 'need_help'),
-                    const SizedBox(width: 8),
-                    _buildFilterChip('Ignore', 'ignore'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                'Category',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.grey.shade800,
-                ),
-              ),
-              const SizedBox(height: 6),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildCategoryChip('All', 'all'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Daily', 'daily'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Project', 'project'),
-                    if (_viewMode != 'employee') ...[
-                      const SizedBox(width: 8),
-                      _buildCategoryChip('Personal', 'personal'),
-                    ],
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Monthly', 'monthly'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Quarterly', 'quarterly'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Yearly', 'yearly'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Other', 'other'),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ],
         ),
       );
@@ -2251,6 +2249,7 @@ class _TasksScreenState extends State<TasksScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
@@ -2276,37 +2275,19 @@ class _TasksScreenState extends State<TasksScreen> {
                               fontWeight: FontWeight.w700,
                               color: Colors.black87,
                             ),
-                            softWrap: true,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '$categoryLabel • $statusLabel',
+                            '$categoryLabel - $statusLabel',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          if (task.isCurrent) ...[
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                'CURRENT',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: currentColor,
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
@@ -2339,16 +2320,22 @@ class _TasksScreenState extends State<TasksScreen> {
                         ],
                       ),
                     ),
-                    if (_isManagerRole && _viewMode == 'self') ...[
-                      const SizedBox(width: 8),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    if (_isManagerRole && _viewMode == 'self')
                       Material(
                         color: Colors.transparent,
                         child: InkWell(
                           onTap: _canChangeTaskStatus(task)
                               ? () => _showTaskStatusPicker(
-                                  context: context,
-                                  task: task,
-                                )
+                                    context: context,
+                                    task: task,
+                                  )
                               : null,
                           borderRadius: BorderRadius.circular(20),
                           child: Container(
@@ -2371,10 +2358,13 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
                         ),
                       ),
-                    ],
-                    if (_isManagerRole && _viewMode == 'employee') ...[
-                      const SizedBox(width: 4),
+                    if (_isManagerRole && _viewMode == 'employee')
                       IconButton(
+                        constraints: const BoxConstraints(
+                          minHeight: 34,
+                          minWidth: 34,
+                        ),
+                        padding: const EdgeInsets.all(6),
                         icon: const Icon(
                           Icons.help_outline,
                           size: 18,
@@ -2385,9 +2375,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           _showTaskReminderDialog(task: task);
                         },
                       ),
-                    ],
-                    if (_canChangeTaskStatus(task)) ...[
-                      const SizedBox(width: 2),
+                    if (_canChangeTaskStatus(task))
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_horiz, size: 18),
                         onSelected: (value) async {
@@ -2424,9 +2412,7 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
                         ],
                       ),
-                    ],
-                    if (_canEditTask(task)) ...[
-                      const SizedBox(width: 4),
+                    if (_canEditTask(task))
                       PopupMenuButton<String>(
                         icon: const Icon(Icons.more_vert, size: 18),
                         onSelected: (value) async {
@@ -2447,7 +2433,6 @@ class _TasksScreenState extends State<TasksScreen> {
                           ),
                         ],
                       ),
-                    ],
                   ],
                 ),
                 if (task.needHelpNote != null &&
@@ -2691,77 +2676,88 @@ class _TasksScreenState extends State<TasksScreen> {
                 ],
                 const SizedBox(height: 10),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                    Expanded(
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
                         children: [
-                          Icon(Icons.circle, size: 8, color: statusColor),
-                          const SizedBox(width: 6),
-                          Text(
-                            task.status.replaceAll('_', ' ').toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: statusColor,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: statusColor.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.circle, size: 8, color: statusColor),
+                                const SizedBox(width: 6),
+                                Text(
+                                  task.status.replaceAll('_', ' ').toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: statusColor,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
+                          if (task.isCurrent)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.play_circle_fill_rounded,
+                                    size: 12,
+                                    color: Colors.blue,
+                                  ),
+                                  SizedBox(width: 6),
+                                  Text(
+                                    'CURRENT',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                         ],
                       ),
                     ),
-                    if (task.isCurrent) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 6,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.play_circle_fill_rounded,
-                              size: 12,
-                              color: Colors.blue,
-                            ),
-                            SizedBox(width: 6),
-                            Text(
-                              'CURRENT',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.blue,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                    const Spacer(),
                     if (task.deadlineDate != null) ...[
+                      const SizedBox(width: 8),
                       Icon(
                         Icons.calendar_today,
                         size: 14,
                         color: Colors.grey.shade600,
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        task.deadlineDate!,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
+                      Flexible(
+                        child: Text(
+                          task.deadlineDate!,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -2777,11 +2773,15 @@ class _TasksScreenState extends State<TasksScreen> {
                         color: Colors.grey.shade600,
                       ),
                       const SizedBox(width: 4),
-                      Text(
-                        'Assigned to: ${task.assigneeName}',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
+                      Expanded(
+                        child: Text(
+                          'Assigned to: ${task.assigneeName}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
@@ -2809,12 +2809,16 @@ class _TasksScreenState extends State<TasksScreen> {
                           color: Colors.grey.shade500,
                         ),
                         const SizedBox(width: 4),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.grey.shade600,
-                            fontStyle: FontStyle.italic,
+                        Expanded(
+                          child: Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                              fontStyle: FontStyle.italic,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -2850,21 +2854,26 @@ class _TasksScreenState extends State<TasksScreen> {
     await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      backgroundColor: const Color(0xFFF5F5F7),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 12,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
-          child: StatefulBuilder(
-            builder: (context, setModalState) {
-              return SingleChildScrollView(
-                child: Column(
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 12,
+              bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+            ),
+            child: StatefulBuilder(
+              builder: (context, setModalState) {
+                return SingleChildScrollView(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 980),
+                      child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -2885,7 +2894,7 @@ class _TasksScreenState extends State<TasksScreen> {
                         const Text(
                           'Edit Task',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: 20,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
@@ -2899,18 +2908,31 @@ class _TasksScreenState extends State<TasksScreen> {
                     const Text(
                       'Task Title',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
                     TextField(
                       controller: titleController,
                       decoration: InputDecoration(
-                        hintText: 'Title',
+                        hintText: 'Enter task title',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCEB56E),
+                            width: 1.4,
+                          ),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 12,
@@ -2921,8 +2943,8 @@ class _TasksScreenState extends State<TasksScreen> {
                     const Text(
                       'Description',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -2930,10 +2952,23 @@ class _TasksScreenState extends State<TasksScreen> {
                       controller: descriptionController,
                       maxLines: 3,
                       decoration: InputDecoration(
-                        hintText: 'Description',
+                        hintText: 'Enter task description',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFCEB56E),
+                            width: 1.4,
+                          ),
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
                         contentPadding: const EdgeInsets.symmetric(
                           horizontal: 14,
                           vertical: 12,
@@ -2944,8 +2979,8 @@ class _TasksScreenState extends State<TasksScreen> {
                     const Text(
                       'Task Status',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -2992,8 +3027,8 @@ class _TasksScreenState extends State<TasksScreen> {
                     const Text(
                       'Priority',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -3016,8 +3051,8 @@ class _TasksScreenState extends State<TasksScreen> {
                     const Text(
                       'Category',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -3045,7 +3080,7 @@ class _TasksScreenState extends State<TasksScreen> {
                                   onSelected: (_) =>
                                       setModalState(() => category = c),
                                   selectedColor: const Color(
-                                    0xFFceb56e,
+                                    0xFFCEB56E,
                                   ).withValues(alpha: 0.2),
                                   backgroundColor: Colors.grey.shade100,
                                 );
@@ -3057,8 +3092,8 @@ class _TasksScreenState extends State<TasksScreen> {
                     const Text(
                       'Deadline',
                       style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 6),
@@ -3077,6 +3112,14 @@ class _TasksScreenState extends State<TasksScreen> {
                                 setModalState(() => deadlineDate = picked);
                               }
                             },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black87,
+                              side: BorderSide(color: Colors.grey.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                             icon: const Icon(Icons.calendar_today, size: 18),
                             label: Text(
                               deadlineDate != null
@@ -3097,6 +3140,14 @@ class _TasksScreenState extends State<TasksScreen> {
                                 setModalState(() => deadlineTime = picked);
                               }
                             },
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.black87,
+                              side: BorderSide(color: Colors.grey.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
                             icon: const Icon(Icons.access_time, size: 18),
                             label: Text(
                               deadlineTime != null
@@ -3162,16 +3213,27 @@ class _TasksScreenState extends State<TasksScreen> {
                             );
                           }
                         },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5F4D2A),
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
                         child: const Text(
-                          'Save',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                          'Save Changes',
+                          style: TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
                     ),
                   ],
                 ),
-              );
-            },
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
         );
       },
@@ -3720,11 +3782,14 @@ class _TasksScreenState extends State<TasksScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel'),
+              child: const Text('Cancel', style: TextStyle(color: Colors.black)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Send'),
+              style: ElevatedButton.styleFrom(
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('Send', style: TextStyle(color: Colors.black)),
             ),
           ],
         );

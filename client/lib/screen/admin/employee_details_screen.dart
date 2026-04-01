@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 
 class EmployeeDetailsScreen extends StatelessWidget {
   final Map<String, dynamic> employee;
@@ -46,6 +48,10 @@ class EmployeeDetailsScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Employee Details'),
         centerTitle: true,
+        actions: [
+          buildNotepadAppBarAction(context),
+          buildCalculatorAppBarAction(context),
+        ],
       ),
       body: SafeArea(
         top: false,

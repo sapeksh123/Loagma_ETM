@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../models/task_model.dart';
 import '../../services/task_service.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 
 class HiddenTasksScreen extends StatefulWidget {
   final String userId;
@@ -828,6 +830,14 @@ Future<void> _openTaskDetails(Task task) async {
             onPressed: () => Navigator.of(context).pop(_hasChanges),
           ),
           title: Text(widget.title),
+          actions: [
+            buildNotepadAppBarAction(
+              context,
+              userId: widget.userId,
+              userRole: widget.userRole,
+            ),
+            buildCalculatorAppBarAction(context),
+          ],
         ),
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())

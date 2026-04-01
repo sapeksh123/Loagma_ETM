@@ -6,6 +6,9 @@ import 'api_config.dart';
 import '../models/note_model.dart';
 
 class NoteService {
+  static const Duration _notesCacheTtl = Duration(seconds: 45);
+  static final Map<String, _NotesCacheEntry> _notesCache = {};
+
   static Map<String, String> _headers({
     required String userId,
     required String userRole,
@@ -17,7 +20,19 @@ class NoteService {
     };
   }
 
-  static Future<List<Note>> listNotes(String userId, String userRole) async {
+  static Future<List<Note>> listNotes(
+    String userId,
+    String userRole, {
+    bool forceRefresh = false,
+  }) async {
+    final cacheKey = '$userRole:$userId';
+    final cached = _notesCache[cacheKey];
+    if (!forceRefresh &&
+        cached != null &&
+        DateTime.now().difference(cached.fetchedAt) < _notesCacheTtl) {
+      return List<Note>.from(cached.notes);
+    }
+
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/notes');
       final response = await http.get(
@@ -29,9 +44,14 @@ class NoteService {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['status'] == 'success') {
           final data = body['data'] as List<dynamic>? ?? [];
-          return data
+          final notes = data
               .map((e) => Note.fromJson(e as Map<String, dynamic>))
               .toList();
+          _notesCache[cacheKey] = _NotesCacheEntry(
+            notes: List<Note>.from(notes),
+            fetchedAt: DateTime.now(),
+          );
+          return notes;
         }
         throw Exception(body['message']?.toString() ?? 'Failed to list notes');
       }
@@ -39,6 +59,10 @@ class NoteService {
     } catch (e) {
       throw Exception('Network error: $e');
     }
+  }
+
+  static void invalidateNotesCache(String userId, String userRole) {
+    _notesCache.remove('$userRole:$userId');
   }
 
   static Future<Note> getNote(
@@ -228,5 +252,15 @@ class NoteService {
       throw Exception('Network error: $e');
     }
   }
+}
+
+class _NotesCacheEntry {
+  final List<Note> notes;
+  final DateTime fetchedAt;
+
+  _NotesCacheEntry({
+    required this.notes,
+    required this.fetchedAt,
+  });
 }
 

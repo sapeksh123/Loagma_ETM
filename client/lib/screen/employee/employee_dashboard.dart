@@ -12,6 +12,8 @@ import '../admin/create_task_screen.dart';
 import '../admin/admin_dashboard.dart';
 import '../admin/notepad_list_screen.dart';
 import '../task/hidden_tasks_screen.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 import '../../widgets/developer_switch_dialog.dart';
 
 class _EditSubtaskEntry {
@@ -627,6 +629,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ),
             elevation: 0,
             actions: [
+              buildNotepadAppBarAction(
+                context,
+                userId: widget.userId,
+                userRole: widget.userRole,
+                userName: widget.userName,
+              ),
+              buildCalculatorAppBarAction(context),
               IconButton(
                 icon: const Icon(Icons.visibility_off_outlined),
                 tooltip: 'Hidden tasks',

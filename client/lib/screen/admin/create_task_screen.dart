@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/task_service.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 
 /// When non-null, Assign To section is hidden and task is assigned accordingly.
 /// 'self' = assign to current user; 'employee' = assign to [assignedToEmployeeId].
@@ -340,6 +342,14 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       appBar: AppBar(
         title: const Text('Create Task'),
         centerTitle: true,
+        actions: [
+          buildNotepadAppBarAction(
+            context,
+            userId: widget.userId,
+            userRole: widget.userRole,
+          ),
+          buildCalculatorAppBarAction(context),
+        ],
       ),
       body: SafeArea(
         child: LayoutBuilder(

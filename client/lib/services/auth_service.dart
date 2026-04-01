@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/user_model.dart';
+import 'api_config.dart';
 import 'api_service.dart';
 
 class AuthService {
@@ -21,11 +22,33 @@ class AuthService {
   // Admin phone number
   static const String adminPhone = '9999999999';
   static const Duration _prefetchTtl = Duration(minutes: 5);
-  static const Duration _authLookupTimeout = Duration(seconds: 4);
-  static const Duration _authLookupRetryTimeout = Duration(seconds: 9);
-  static const Duration _authWarmupWait = Duration(milliseconds: 700);
+  static const Duration _authLookupTimeoutLocal = Duration(seconds: 4);
+  static const Duration _authLookupRetryTimeoutLocal = Duration(seconds: 9);
+  static const Duration _authLookupTimeoutProduction = Duration(seconds: 10);
+  static const Duration _authLookupRetryTimeoutProduction = Duration(seconds: 18);
+  static const Duration _authWarmupWaitLocal = Duration(milliseconds: 700);
+  static const Duration _authWarmupWaitProduction = Duration(milliseconds: 1400);
+  static const Duration _authBackoffBaseLocal = Duration(milliseconds: 250);
+  static const Duration _authBackoffBaseProduction = Duration(milliseconds: 700);
+  static const int _authAttemptsLocal = 2;
+  static const int _authAttemptsProduction = 3;
   static final Map<String, _CachedUserEntry> _prefetchedUsersByPhone = {};
   static final Map<String, Future<Map<String, dynamic>?>> _inflightUserLookups = {};
+
+  static Duration get _authLookupTimeout => ApiConfig.useProduction
+      ? _authLookupTimeoutProduction
+      : _authLookupTimeoutLocal;
+  static Duration get _authLookupRetryTimeout => ApiConfig.useProduction
+      ? _authLookupRetryTimeoutProduction
+      : _authLookupRetryTimeoutLocal;
+  static Duration get _authWarmupWait => ApiConfig.useProduction
+      ? _authWarmupWaitProduction
+      : _authWarmupWaitLocal;
+  static Duration get _authBackoffBase => ApiConfig.useProduction
+      ? _authBackoffBaseProduction
+      : _authBackoffBaseLocal;
+  static int get _authAttempts =>
+      ApiConfig.useProduction ? _authAttemptsProduction : _authAttemptsLocal;
 
   /// Persist user session so app can restore on next launch.
   static Future<void> saveSession(User user) async {
@@ -48,12 +71,17 @@ class AuthService {
 
   static Future<void> sendOtp(String phone) async {
     final normalizedPhone = normalizePhone(phone);
+    final backendWarmup = _warmupBackend();
+    unawaited(backendWarmup);
 
     // Start prefetch immediately and wait briefly if it can finish quickly.
-    final warmup = _getOrFetchUserByContact(phone);
-    unawaited(warmup);
+    final userWarmup = _getOrFetchUserByContact(phone);
+    unawaited(userWarmup);
     try {
-      await warmup.timeout(_authWarmupWait);
+      await Future.wait([
+        userWarmup.timeout(_authWarmupWait),
+        backendWarmup.timeout(_authWarmupWait),
+      ]);
     } catch (_) {
       // Keep OTP navigation snappy even if network is slow.
     }
@@ -86,27 +114,48 @@ class AuthService {
       throw Exception('Invalid OTP');
     }
 
+    // Trigger backend warmup so production cold starts are less likely to
+    // impact the first auth lookup.
+    final backendWarmup = _warmupBackend();
+    unawaited(backendWarmup);
+    try {
+      await backendWarmup.timeout(_authWarmupWait);
+    } catch (_) {
+      // Continue to verification even if warmup isn't ready yet.
+    }
+
     dynamic match = _getPrefetchedUser(phone);
+    ApiException? byContactError;
+    ApiException? fallbackError;
 
     // First try dedicated backend lookup so pagination never blocks valid logins.
     if (match == null) {
-      match = await _getOrFetchUserByContact(phone);
+      try {
+        match = await _getOrFetchUserByContact(phone);
+      } on ApiException catch (e) {
+        byContactError = e;
+      }
     }
 
     if (match == null) {
-      final fallbackResponse = await _fetchUsersFallback(phone);
-      if (fallbackResponse['status'] != 'success') {
-        throw Exception('Unable to fetch users from server');
+      try {
+        final fallbackResponse = await _fetchUsersFallback(phone);
+        if (fallbackResponse['status'] != 'success') {
+          throw Exception('Unable to fetch users from server');
+        }
+
+        final List<dynamic> users = fallbackResponse['data'] ?? [];
+        final normalizedInput = normalizePhone(phone);
+
+        match = users.firstWhere(
+          (u) => normalizePhone((u['contactNumber'] ?? '').toString()) ==
+              normalizedInput,
+          orElse: () => null,
+        );
+      } on ApiException catch (e) {
+        fallbackError = e;
+        throw _preferredAuthError(primary: byContactError, secondary: fallbackError);
       }
-
-      final List<dynamic> users = fallbackResponse['data'] ?? [];
-      final normalizedInput = normalizePhone(phone);
-
-      match = users.firstWhere(
-        (u) => normalizePhone((u['contactNumber'] ?? '').toString()) ==
-            normalizedInput,
-        orElse: () => null,
-      );
     }
 
     if (match == null) {
@@ -168,37 +217,97 @@ class AuthService {
   ) async {
     final encodedPhone = Uri.encodeComponent(phone);
     final endpoint = '/users/by-contact/$encodedPhone?view=minimal';
-    Map<String, dynamic>? response;
+    ApiException? lastError;
 
-    try {
-      response = await ApiService.get(endpoint, timeout: _authLookupTimeout);
-    } catch (_) {
-      // Retry once with a longer timeout for slow backend/network moments.
+    for (var attempt = 1; attempt <= _authAttempts; attempt++) {
+      final timeout = attempt == 1 ? _authLookupTimeout : _authLookupRetryTimeout;
       try {
-        response = await ApiService.get(
-          endpoint,
-          timeout: _authLookupRetryTimeout,
-        );
-      } catch (_) {
+        final response = await ApiService.get(endpoint, timeout: timeout);
+        if (response['status'] == 'success' && response['data'] != null) {
+          final user = Map<String, dynamic>.from(response['data'] as Map);
+          return user;
+        }
         return null;
+      } on ApiServerException catch (e) {
+        if (e.statusCode == 404) {
+          return null;
+        }
+        lastError = e;
+      } on ApiTimeoutException catch (e) {
+        lastError = e;
+      } on ApiNetworkException catch (e) {
+        lastError = e;
+      }
+
+      if (attempt < _authAttempts) {
+        await Future.delayed(_retryDelay(attempt));
       }
     }
 
-    if (response['status'] == 'success' && response['data'] != null) {
-      final user = Map<String, dynamic>.from(response['data'] as Map);
-      return user;
+    if (lastError != null) {
+      throw lastError;
     }
-
     return null;
   }
 
   static Future<Map<String, dynamic>> _fetchUsersFallback(String phone) async {
     final endpoint = '/users?search=$phone&per_page=20';
-    try {
-      return await ApiService.get(endpoint, timeout: _authLookupTimeout);
-    } catch (_) {
-      return ApiService.get(endpoint, timeout: _authLookupRetryTimeout);
+    ApiException? lastError;
+
+    for (var attempt = 1; attempt <= _authAttempts; attempt++) {
+      final timeout = attempt == 1 ? _authLookupTimeout : _authLookupRetryTimeout;
+      try {
+        return await ApiService.get(endpoint, timeout: timeout);
+      } on ApiServerException catch (e) {
+        if (e.statusCode >= 500) {
+          lastError = e;
+        } else {
+          rethrow;
+        }
+      } on ApiTimeoutException catch (e) {
+        lastError = e;
+      } on ApiNetworkException catch (e) {
+        lastError = e;
+      }
+
+      if (attempt < _authAttempts) {
+        await Future.delayed(_retryDelay(attempt));
+      }
     }
+
+    if (lastError != null) {
+      throw lastError;
+    }
+
+    throw const ApiNetworkException('Unable to fetch users from server');
+  }
+
+  static Future<void> _warmupBackend() async {
+    try {
+      await ApiService.get('/health', timeout: const Duration(seconds: 6));
+    } catch (_) {
+      // Warmup is best-effort only.
+    }
+  }
+
+  static Duration _retryDelay(int attempt) {
+    return Duration(milliseconds: _authBackoffBase.inMilliseconds * attempt);
+  }
+
+  static ApiException _preferredAuthError({
+    ApiException? primary,
+    ApiException? secondary,
+  }) {
+    final candidates = [secondary, primary].whereType<ApiException>().toList();
+    for (final error in candidates) {
+      if (error is ApiTimeoutException) return error;
+    }
+    for (final error in candidates) {
+      if (error is ApiNetworkException) return error;
+    }
+    return candidates.isNotEmpty
+        ? candidates.first
+        : const ApiNetworkException('Unable to reach server');
   }
 
   static String normalizePhone(String value) {

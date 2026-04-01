@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../chat/chat_thread_controller.dart';
 import '../../models/chat_message_model.dart';
 import '../../models/chat_thread_model.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 
 class ChatThreadScreen extends StatefulWidget {
   const ChatThreadScreen({
@@ -79,6 +81,14 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
                 ),
               ],
             ),
+            actions: [
+              buildNotepadAppBarAction(
+                context,
+                userId: widget.userId,
+                userRole: widget.userRole,
+              ),
+              buildCalculatorAppBarAction(context),
+            ],
           ),
           body: Column(
             children: [

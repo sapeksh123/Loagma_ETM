@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../chat/chat_list_controller.dart';
 import '../../models/chat_thread_model.dart';
 import '../../models/chat_user_model.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 import 'chat_thread_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
@@ -61,6 +63,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
               'Chats',
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
+            actions: [
+              buildNotepadAppBarAction(
+                context,
+                userId: widget.userId,
+                userRole: widget.userRole,
+              ),
+              buildCalculatorAppBarAction(context),
+            ],
           ),
           body: RefreshIndicator(
             onRefresh: () => _controller.refresh(),

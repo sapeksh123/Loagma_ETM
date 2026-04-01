@@ -4,6 +4,31 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'api_config.dart';
 
+class ApiException implements Exception {
+  final String message;
+
+  const ApiException(this.message);
+
+  @override
+  String toString() => message;
+}
+
+class ApiTimeoutException extends ApiException {
+  const ApiTimeoutException(super.message);
+}
+
+class ApiNetworkException extends ApiException {
+  final String? details;
+
+  const ApiNetworkException(super.message, {this.details});
+}
+
+class ApiServerException extends ApiException {
+  final int statusCode;
+
+  const ApiServerException(this.statusCode, super.message);
+}
+
 class ApiService {
   static final http.Client _client = http.Client();
 
@@ -23,18 +48,28 @@ class ApiService {
 
       return _parseResponse(response, allowedStatuses: const {200, 201});
     } on TimeoutException {
-      throw Exception('Request timeout. Please try again.');
-    } on Exception {
+      throw const ApiTimeoutException('Request timeout. Please try again.');
+    } on SocketException catch (e) {
+      throw ApiNetworkException(
+        'Unable to reach server. Check your internet connection and try again.',
+        details: e.message,
+      );
+    } on http.ClientException catch (e) {
+      throw ApiNetworkException(
+        'Unable to reach server. Check your internet connection and try again.',
+        details: e.message,
+      );
+    } on ApiException {
       rethrow;
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw ApiNetworkException('Network error: $e');
     }
   }
 
   static Future<Map<String, dynamic>> get(String endpoint, {Duration? timeout}) async {
     final resolvedTimeout = timeout ?? ApiConfig.requestTimeout;
     final candidates = ApiConfig.localDevBaseUrlCandidates;
-    Exception? lastNetworkError;
+    ApiException? lastNetworkError;
 
     for (final baseUrl in candidates) {
       try {
@@ -46,16 +81,30 @@ class ApiService {
             .timeout(resolvedTimeout);
 
         return _parseResponse(response, allowedStatuses: const {200});
+      } on ApiTimeoutException catch (e) {
+        lastNetworkError = e;
       } on TimeoutException {
-        lastNetworkError = Exception('Request timeout. Please try again.');
+        lastNetworkError = const ApiTimeoutException(
+          'Request timeout. Please try again.',
+        );
       } on SocketException catch (e) {
-        lastNetworkError = Exception('Network error: ${e.message}');
+        lastNetworkError = ApiNetworkException(
+          'Unable to reach server. Check your internet connection and try again.',
+          details: e.message,
+        );
       } on http.ClientException catch (e) {
-        lastNetworkError = Exception('Network error: ${e.message}');
-      } on Exception {
+        lastNetworkError = ApiNetworkException(
+          'Unable to reach server. Check your internet connection and try again.',
+          details: e.message,
+        );
+      } on ApiNetworkException catch (e) {
+        lastNetworkError = e;
+      } on ApiServerException {
+        rethrow;
+      } on ApiException {
         rethrow;
       } catch (e) {
-        throw Exception('Network error: $e');
+        throw ApiNetworkException('Network error: $e');
       }
     }
 
@@ -63,7 +112,9 @@ class ApiService {
       throw lastNetworkError;
     }
 
-    throw Exception('Network error: Unable to reach server');
+    throw const ApiNetworkException(
+      'Unable to reach server. Check your internet connection and try again.',
+    );
   }
 
   static Map<String, dynamic> _parseResponse(
@@ -74,20 +125,24 @@ class ApiService {
       final decoded = jsonDecode(response.body);
       if (decoded is Map<String, dynamic>) return decoded;
       if (decoded is Map) return Map<String, dynamic>.from(decoded);
-      throw Exception('Unexpected response format');
+      throw const ApiServerException(500, 'Unexpected response format');
     }
 
+    String? message;
     try {
       final data = jsonDecode(response.body) as Map<String, dynamic>?;
-      final message = data?['message'] ??
+      message = data?['message'] ??
           (data?['errors'] != null ? data!['errors'].toString() : null);
-      if (message != null && message.toString().trim().isNotEmpty) {
-        throw Exception(message.toString().trim());
-      }
     } on FormatException {
       // Ignore and return status-based error.
     }
 
-    throw Exception('Server error: ${response.statusCode}');
+    final normalizedMessage = (message ?? '').toString().trim();
+    throw ApiServerException(
+      response.statusCode,
+      normalizedMessage.isNotEmpty
+          ? normalizedMessage
+          : 'Server error: ${response.statusCode}',
+    );
   }
 }
