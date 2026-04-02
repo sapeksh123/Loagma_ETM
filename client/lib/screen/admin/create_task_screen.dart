@@ -43,6 +43,7 @@ class _SubtaskEntry {
 class _CreateTaskScreenState extends State<CreateTaskScreen> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
+  final FocusNode _titleFocusNode = FocusNode();
   final _descriptionController = TextEditingController();
   final List<_SubtaskEntry> _subtaskEntries = [];
 
@@ -95,6 +96,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       _nextSubtaskId(),
       TextEditingController(),
     ));
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _titleFocusNode.requestFocus();
+    });
   }
 
   String _nextSubtaskId() => 'subtask_${DateTime.now().millisecondsSinceEpoch}';
@@ -119,6 +125,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   @override
   void dispose() {
     _titleController.dispose();
+    _titleFocusNode.dispose();
     _descriptionController.dispose();
     for (final e in _subtaskEntries) {
       e.controller.dispose();
@@ -779,6 +786,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   Widget _buildTitleField() {
     return TextFormField(
       controller: _titleController,
+      focusNode: _titleFocusNode,
+      autofocus: true,
       decoration: InputDecoration(
         hintText: 'Enter task title',
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),

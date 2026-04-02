@@ -1181,6 +1181,21 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
   }
 
+  Color _getPriorityColor(String priority) {
+    switch (priority) {
+      case 'low':
+        return Colors.blue;
+      case 'medium':
+        return Colors.orange;
+      case 'high':
+        return Colors.deepOrange;
+      case 'critical':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
   /// Subtask uses same status colors as task
   Color _getSubtaskStatusColor(String status) => _getStatusColor(status);
 
@@ -1408,6 +1423,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     final statusColor = _getStatusColor(task.status);
     final currentColor = Colors.blue.shade700;
     final accentColor = task.isCurrent ? currentColor : statusColor;
+    final canChangeStatus = _canChangeTaskStatus(task);
+    final canEdit = _canEditTask(task);
+    final canDelete = _canDeleteTask(task);
+    final priorityColor = _getPriorityColor(task.priority);
     final isNeedHelp = task.status == 'need_help';
     final cardBorderColor = isNeedHelp ? Colors.grey : accentColor;
     final cardBackground = task.isCurrent
@@ -1440,6 +1459,73 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: priorityColor.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.flag_rounded,
+                            size: 12,
+                            color: priorityColor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            task.priority.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: priorityColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (task.deadlineDate != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              size: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              task.deadlineDate!,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 Row(
                   children: [
                     Container(
@@ -1504,7 +1590,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     Material(
                       color: Colors.transparent,
                       child: InkWell(
-                        onTap: _canChangeTaskStatus(task)
+                        onTap: canChangeStatus
                             ? () => _openStatusChange(task)
                             : null,
                         borderRadius: BorderRadius.circular(20),
@@ -1521,7 +1607,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           child: Icon(
                             Icons.flag,
                             size: 16,
-                            color: _canChangeTaskStatus(task)
+                            color: canChangeStatus
                                 ? statusColor
                                 : statusColor.withValues(alpha: 0.5),
                           ),
@@ -1548,12 +1634,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   Text(
                     'Subtasks',
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade800,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   ...task.subtasksWithStatus
                       .toList()
                       .asMap()
@@ -1567,74 +1653,87 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                             st.needHelpNote != null &&
                             st.needHelpNote!.isNotEmpty;
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.only(bottom: 8),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      st.text,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.grey.shade800,
-                                        decoration: st.status == 'completed'
-                                            ? TextDecoration.lineThrough
-                                            : null,
+                              Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.72),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.grey.shade200),
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        st.text,
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.grey.shade800,
+                                          height: 1.35,
+                                          decoration: st.status == 'completed'
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                        ),
+                                        softWrap: true,
                                       ),
-                                      softWrap: true,
                                     ),
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Material(
-                                    color: Colors.transparent,
-                                    child: InkWell(
-                                      onTap: _canChangeTaskStatus(task)
-                                          ? () => _showSubtaskStatusPicker(
-                                              context: context,
-                                              currentStatus: st.status,
-                                              onSelected: (s) async {
-                                                final note =
-                                                    await _showNeedHelpNoteDialog(
-                                                      title: 'Status Note',
-                                                      hint:
-                                                          'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
-                                                    );
-                                                if (note == null) return;
-                                                await _updateSubtaskStatus(
-                                                  task,
-                                                  idx,
-                                                  s,
-                                                  needHelpNote: note,
-                                                );
-                                              },
-                                            )
-                                          : null,
-                                      borderRadius: BorderRadius.circular(20),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(6),
-                                        decoration: BoxDecoration(
-                                          color: color.withValues(alpha: 0.15),
-                                          shape: BoxShape.circle,
-                                          border: Border.all(
-                                            color: color,
-                                            width: 1.5,
+                                    const SizedBox(width: 8),
+                                    Material(
+                                      color: Colors.transparent,
+                                      child: InkWell(
+                                        onTap: canChangeStatus
+                                            ? () => _showSubtaskStatusPicker(
+                                                context: context,
+                                                currentStatus: st.status,
+                                                onSelected: (s) async {
+                                                  final note =
+                                                      await _showNeedHelpNoteDialog(
+                                                        title: 'Status Note',
+                                                        hint:
+                                                            'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
+                                                      );
+                                                  if (note == null) return;
+                                                  await _updateSubtaskStatus(
+                                                    task,
+                                                    idx,
+                                                    s,
+                                                    needHelpNote: note,
+                                                  );
+                                                },
+                                              )
+                                            : null,
+                                        borderRadius: BorderRadius.circular(20),
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color: color.withValues(alpha: 0.15),
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: color,
+                                              width: 1.5,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            Icons.flag,
+                                            size: 16,
+                                            color: canChangeStatus
+                                                ? color
+                                                : color.withValues(alpha: 0.5),
                                           ),
                                         ),
-                                        child: Icon(
-                                          Icons.flag,
-                                          size: 16,
-                                          color: _canChangeTaskStatus(task)
-                                              ? color
-                                              : color.withValues(alpha: 0.5),
-                                        ),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                               if (showSubtaskHelp) ...[
                                 const SizedBox(height: 4),
@@ -1730,22 +1829,86 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   ),
                 ],
                 const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.grey.shade300),
-                  ),
-                  child: Text(
-                    task.assignmentByLabel(),
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade800,
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          if (task.assigneeName != null)
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.person_outline,
+                                  size: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Assigned to: ${task.assigneeName}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                task.isAssignedToSelf
+                                    ? Icons.person
+                                    : Icons.admin_panel_settings,
+                                size: 14,
+                                color: Colors.grey.shade600,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                task.assignmentByLabel(),
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.grey.shade700,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
+                    if (canEdit)
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert, size: 18),
+                        onSelected: (value) async {
+                          if (value == 'edit') {
+                            await _openTaskEdit(task);
+                          } else if (value == 'delete') {
+                            await _deleteTaskFromCard(task);
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'edit',
+                            child: Text('Edit task'),
+                          ),
+                          if (canDelete)
+                            const PopupMenuItem(
+                              value: 'delete',
+                              child: Text('Delete task'),
+                            ),
+                        ],
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -1753,6 +1916,53 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         ),
       ),
     );
+  }
+
+  Future<void> _deleteTaskFromCard(Task task) async {
+    if (!_canDeleteTask(task)) return;
+    final confirm =
+        await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            title: const Text('Delete task?'),
+            content: const Text('This will permanently delete this task.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                ),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!confirm) return;
+
+    try {
+      await TaskService.deleteTask(task.id, widget.userId, widget.userRole);
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Task deleted')));
+      _fetchTasks();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+        ),
+      );
+    }
   }
 
   Future<void> _openTaskDetails(Task task) async {

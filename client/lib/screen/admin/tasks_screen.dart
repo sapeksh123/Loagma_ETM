@@ -2219,6 +2219,8 @@ class _TasksScreenState extends State<TasksScreen> {
     final accentColor = task.isCurrent ? currentColor : statusColor;
     final priorityColor = _getPriorityColor(task.priority);
     final isSelfContextForHidden = !_isManagerRole || _viewMode == 'self';
+    final canChangeStatus = _canChangeTaskStatus(task);
+    final canEdit = _canEditTask(task);
     final categoryLabel = task.category.isNotEmpty
         ? task.category[0].toUpperCase() + task.category.substring(1)
         : 'Task';
@@ -2248,6 +2250,73 @@ class _TasksScreenState extends State<TasksScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: priorityColor.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.flag_rounded,
+                            size: 12,
+                            color: priorityColor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            task.priority.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: priorityColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (task.deadlineDate != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.grey.shade300),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              size: 12,
+                              color: Colors.grey.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              task.deadlineDate!,
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -2291,150 +2360,65 @@ class _TasksScreenState extends State<TasksScreen> {
                         ],
                       ),
                     ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: priorityColor.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.flag_rounded,
-                            size: 12,
-                            color: priorityColor,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            task.priority.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: priorityColor,
+                    const SizedBox(width: 8),
+                    Wrap(
+                      spacing: 2,
+                      runSpacing: 2,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (_isManagerRole && _viewMode == 'self')
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: canChangeStatus
+                                  ? () => _showTaskStatusPicker(
+                                        context: context,
+                                        task: task,
+                                      )
+                                  : null,
+                              borderRadius: BorderRadius.circular(20),
+                              child: Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: statusColor.withValues(alpha: 0.15),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: statusColor,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.flag,
+                                  size: 16,
+                                  color: canChangeStatus
+                                      ? accentColor
+                                      : accentColor.withValues(alpha: 0.5),
+                                ),
+                              ),
                             ),
                           ),
-                        ],
-                      ),
+                        if (_isManagerRole && _viewMode == 'employee')
+                          IconButton(
+                            constraints: const BoxConstraints(
+                              minHeight: 34,
+                              minWidth: 34,
+                            ),
+                            padding: const EdgeInsets.all(6),
+                            icon: const Icon(
+                              Icons.help_outline,
+                              size: 18,
+                              color: Color(0xFF9E9E9E),
+                            ),
+                            tooltip: 'Send reminder to employee',
+                            onPressed: () {
+                              _showTaskReminderDialog(task: task);
+                            },
+                          ),
+                      ],
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Wrap(
-                  spacing: 4,
-                  runSpacing: 4,
-                  children: [
-                    if (_isManagerRole && _viewMode == 'self')
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _canChangeTaskStatus(task)
-                              ? () => _showTaskStatusPicker(
-                                    context: context,
-                                    task: task,
-                                  )
-                              : null,
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: statusColor.withValues(alpha: 0.15),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: statusColor,
-                                width: 1.5,
-                              ),
-                            ),
-                            child: Icon(
-                              Icons.flag,
-                              size: 16,
-                              color: _canChangeTaskStatus(task)
-                                  ? accentColor
-                                  : accentColor.withValues(alpha: 0.5),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (_isManagerRole && _viewMode == 'employee')
-                      IconButton(
-                        constraints: const BoxConstraints(
-                          minHeight: 34,
-                          minWidth: 34,
-                        ),
-                        padding: const EdgeInsets.all(6),
-                        icon: const Icon(
-                          Icons.help_outline,
-                          size: 18,
-                          color: Color(0xFF9E9E9E),
-                        ),
-                        tooltip: 'Send reminder to employee',
-                        onPressed: () {
-                          _showTaskReminderDialog(task: task);
-                        },
-                      ),
-                    if (_canChangeTaskStatus(task))
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_horiz, size: 18),
-                        onSelected: (value) async {
-                          if (value == 'hold') {
-                            await _updateTaskStatusWithOptionalNote(task, 'hold');
-                          } else if (value == 'current') {
-                            await _moveTaskToCurrent(task);
-                          }
-                        },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                            value: 'hold',
-                            child: Row(
-                              children: [
-                                Icon(Icons.pause_circle_outline, size: 16),
-                                SizedBox(width: 8),
-                                Text('Hold'),
-                              ],
-                            ),
-                          ),
-                          PopupMenuItem(
-                            value: 'current',
-                            child: Row(
-                              children: [
-                                Icon(
-                                  Icons.play_circle_fill_rounded,
-                                  size: 16,
-                                  color: Colors.blue,
-                                ),
-                                SizedBox(width: 8),
-                                Text('Move to Current Task'),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    if (_canEditTask(task))
-                      PopupMenuButton<String>(
-                        icon: const Icon(Icons.more_vert, size: 18),
-                        onSelected: (value) async {
-                          if (value == 'edit') {
-                            await _openAdminTaskEdit(task);
-                          } else if (value == 'delete') {
-                            await _deleteTask(task);
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          const PopupMenuItem(
-                            value: 'edit',
-                            child: Text('Edit task'),
-                          ),
-                          const PopupMenuItem(
-                            value: 'delete',
-                            child: Text('Delete task'),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
                 if (task.needHelpNote != null &&
                     task.needHelpNote!.isNotEmpty) ...[
                   const SizedBox(height: 8),
@@ -2509,12 +2493,12 @@ class _TasksScreenState extends State<TasksScreen> {
                   Text(
                     'Subtasks',
                     style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.grey.shade800,
                     ),
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
                   ...task.subtasksWithStatus.asMap().entries.map((entry) {
                     final idx = entry.key;
                     final st = entry.value;
@@ -2522,97 +2506,110 @@ class _TasksScreenState extends State<TasksScreen> {
                     final showSubtaskHelp =
                         st.needHelpNote != null && st.needHelpNote!.isNotEmpty;
                     return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  st.text,
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.grey.shade800,
-                                    decoration: st.status == 'completed'
-                                        ? TextDecoration.lineThrough
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.72),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade200),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    st.text,
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.grey.shade800,
+                                      height: 1.35,
+                                      decoration: st.status == 'completed'
+                                          ? TextDecoration.lineThrough
+                                          : null,
+                                    ),
+                                    softWrap: true,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                if (_isManagerRole &&
+                                    _viewMode == 'employee') ...[
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.help_outline,
+                                      size: 18,
+                                      color: Color(0xFF9E9E9E),
+                                    ),
+                                    tooltip:
+                                        'Send reminder for this subtask to employee',
+                                    onPressed: () {
+                                      _showTaskReminderDialog(
+                                        task: task,
+                                        subtaskIndex: idx,
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 2),
+                                ],
+                                Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: canChangeStatus
+                                        ? () => _showSubtaskStatusPicker(
+                                            context: context,
+                                            currentStatus: st.status,
+                                            onSelected: (s) async {
+                                              final note =
+                                                  await _showNeedHelpNoteDialog(
+                                                    title: 'Status Note',
+                                                    hint:
+                                                        'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
+                                                    allowEmpty: true,
+                                                  );
+                                              if (note == null) return;
+                                              await _updateSubtaskStatus(
+                                                task,
+                                                idx,
+                                                s,
+                                                statusNote: note,
+                                              );
+                                            },
+                                            onMoveToCurrent: () async {
+                                              await _moveTaskToCurrent(task);
+                                            },
+                                          )
                                         : null,
-                                  ),
-                                  softWrap: true,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              if (_isManagerRole &&
-                                  _viewMode == 'employee') ...[
-                                IconButton(
-                                  icon: const Icon(
-                                    Icons.help_outline,
-                                    size: 18,
-                                    color: Color(0xFF9E9E9E),
-                                  ),
-                                  tooltip:
-                                      'Send reminder for this subtask to employee',
-                                  onPressed: () {
-                                    _showTaskReminderDialog(
-                                      task: task,
-                                      subtaskIndex: idx,
-                                    );
-                                  },
-                                ),
-                                const SizedBox(width: 2),
-                              ],
-                              Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: _canChangeTaskStatus(task)
-                                      ? () => _showSubtaskStatusPicker(
-                                          context: context,
-                                          currentStatus: st.status,
-                                          onSelected: (s) async {
-                                            final note =
-                                                await _showNeedHelpNoteDialog(
-                                                  title: 'Status Note',
-                                                  hint:
-                                                      'Add a note for status: ${s.replaceAll('_', ' ').toUpperCase()} (optional)',
-                                                  allowEmpty: true,
-                                                );
-                                            if (note == null) return;
-                                            await _updateSubtaskStatus(
-                                              task,
-                                              idx,
-                                              s,
-                                              statusNote: note,
-                                            );
-                                          },
-                                          onMoveToCurrent: () async {
-                                            await _moveTaskToCurrent(task);
-                                          },
-                                        )
-                                      : null,
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(6),
-                                    decoration: BoxDecoration(
-                                      color: color.withValues(alpha: 0.15),
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                        color: color,
-                                        width: 1.5,
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: color.withValues(alpha: 0.15),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: color,
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        Icons.flag,
+                                        size: 16,
+                                        color: canChangeStatus
+                                            ? color
+                                            : color.withValues(alpha: 0.5),
                                       ),
                                     ),
-                                    child: Icon(
-                                      Icons.flag,
-                                      size: 16,
-                                      color: _canChangeTaskStatus(task)
-                                          ? color
-                                          : color.withValues(alpha: 0.5),
-                                    ),
                                   ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                           if (showSubtaskHelp) ...[
                             const SizedBox(height: 6),
@@ -2741,53 +2738,9 @@ class _TasksScreenState extends State<TasksScreen> {
                         ],
                       ),
                     ),
-                    if (task.deadlineDate != null) ...[
-                      const SizedBox(width: 8),
-                      Icon(
-                        Icons.calendar_today,
-                        size: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          task.deadlineDate!,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
                   ],
                 ),
-                if (task.assigneeName != null) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.person_outline,
-                        size: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          'Assigned to: ${task.assigneeName}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 4),
+                const SizedBox(height: 8),
                 Builder(
                   builder: (context) {
                     String? label;
@@ -2798,29 +2751,85 @@ class _TasksScreenState extends State<TasksScreen> {
                         includeEmployeeNameForSelf: includeEmployeeNameForSelf,
                       );
                     }
-                    if (label == null) return const SizedBox.shrink();
                     return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(
-                          task.isAssignedToSelf
-                              ? Icons.person
-                              : Icons.admin_panel_settings,
-                          size: 14,
-                          color: Colors.grey.shade500,
-                        ),
-                        const SizedBox(width: 4),
                         Expanded(
-                          child: Text(
-                            label,
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: Colors.grey.shade600,
-                              fontStyle: FontStyle.italic,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                          child: Wrap(
+                            spacing: 10,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              if (task.assigneeName != null)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.person_outline,
+                                      size: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Assigned to: ${task.assigneeName}',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              if (label != null)
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      task.isAssignedToSelf
+                                          ? Icons.person
+                                          : Icons.admin_panel_settings,
+                                      size: 14,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      label,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade700,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                            ],
                           ),
                         ),
+                        if (canEdit)
+                          PopupMenuButton<String>(
+                            icon: const Icon(Icons.more_vert, size: 18),
+                            onSelected: (value) async {
+                              if (value == 'edit') {
+                                await _openAdminTaskEdit(task);
+                              } else if (value == 'delete') {
+                                await _deleteTask(task);
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: Text('Edit task'),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete task'),
+                              ),
+                            ],
+                          ),
                       ],
                     );
                   },
