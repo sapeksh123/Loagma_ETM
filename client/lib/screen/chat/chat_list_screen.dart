@@ -56,7 +56,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       animation: _controller,
       builder: (context, _) {
         return Scaffold(
-          backgroundColor: const Color(0xFFF4F1EA),
+          backgroundColor: const Color.fromARGB(255, 253, 252, 232),
           appBar: AppBar(
             elevation: 0,
             title: const Text(

@@ -65,7 +65,7 @@ class _ChatThreadScreenState extends State<ChatThreadScreen> {
       animation: _controller,
       builder: (context, _) {
         return Scaffold(
-          backgroundColor: const Color(0xFFECE5D8),
+          backgroundColor: const Color.fromARGB(255, 253, 252, 232),
           appBar: AppBar(
             titleSpacing: 0,
             title: Column(

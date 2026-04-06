@@ -18,13 +18,15 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Employee Task Management',
+      title: 'Task Management',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
           seedColor: const Color(0xFFceb56e),
           primary: const Color(0xFFceb56e),
         ),
+        scaffoldBackgroundColor: const Color.fromARGB(255, 253, 252, 232),
+        canvasColor: const Color.fromARGB(255, 253, 252, 232),
         useMaterial3: true,
         appBarTheme: const AppBarTheme(
           backgroundColor: Color(0xFFceb56e),

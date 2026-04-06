@@ -589,6 +589,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   static const Color _gold = Color(0xFFceb56e);
 
+  TextStyle get _lightHintStyle =>
+      TextStyle(color: Colors.black.withValues(alpha: 0.35));
+
   /// Shared select button style for Category, Priority, and Deadline.
   Widget _buildSelectButton({
     required String label,
@@ -735,6 +738,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             decoration: InputDecoration(
               labelText: 'Employee ID',
               hintText: 'Enter employee user ID',
+              hintStyle: _lightHintStyle,
               prefixIcon: const Icon(Icons.badge_outlined),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -790,6 +794,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       autofocus: true,
       decoration: InputDecoration(
         hintText: 'Enter task title',
+        hintStyle: _lightHintStyle,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         filled: true,
         fillColor: Colors.white,
@@ -809,6 +814,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       maxLines: 4,
       decoration: InputDecoration(
         hintText: 'Enter task description',
+        hintStyle: _lightHintStyle,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
         filled: true,
         fillColor: Colors.white,
@@ -847,6 +853,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                     controller: entry.controller,
                     decoration: InputDecoration(
                       hintText: 'Subtask ${index + 1}',
+                      hintStyle: _lightHintStyle,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),

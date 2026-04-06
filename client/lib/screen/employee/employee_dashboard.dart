@@ -45,7 +45,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   bool _isLoadingTasks = true;
   String? _tasksError;
 
-  /// Status filter: null = all, else one of assigned, in_progress, completed, paused, need_help
+  /// Status filter: null = all, else one of assigned, in_progress, completed, paused, hold, need_help, ignore
   String? _statusFilter;
   String? _assignmentByFilter;
   int _unreadNotifications = 0;
@@ -76,8 +76,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       final response = await TaskService.getTasks(
         widget.userId,
         widget.userRole,
-        view: 'minimal',
-        includeHistory: false,
       );
 
       if (response['status'] == 'success') {
@@ -177,106 +175,134 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       {'value': 'in_progress', 'label': 'In progress'},
       {'value': 'completed', 'label': 'Completed'},
       {'value': 'paused', 'label': 'Paused'},
+      {'value': 'hold', 'label': 'Hold'},
       {'value': 'need_help', 'label': 'Need help'},
+      {'value': 'ignore', 'label': 'Ignore'},
     ];
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) {
         return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Filter by status',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Show only tasks with the selected status.',
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-                ),
-                const SizedBox(height: 16),
-                ...statusOptions.map((opt) {
-                  final value = opt['value'];
-                  final label = opt['label']!;
-                  final isSelected = _statusFilter == value;
-                  return Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          setState(() {
-                            _statusFilter = value;
-                          });
-                          Navigator.pop(context);
-                        },
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                            horizontal: 12,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? _gold.withValues(alpha: 0.12)
-                                : Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected ? _gold : Colors.grey.shade200,
-                              width: isSelected ? 2 : 1,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              if (isSelected)
-                                const Icon(
-                                  Icons.check_circle,
-                                  color: Color(0xFF6B5B2E),
-                                  size: 22,
-                                ),
-                              if (isSelected) const SizedBox(width: 12),
-                              Text(
-                                label,
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: isSelected
-                                      ? FontWeight.w600
-                                      : FontWeight.normal,
-                                  color: isSelected
-                                      ? const Color(0xFF6B5B2E)
-                                      : Colors.grey.shade800,
-                                ),
-                              ),
-                            ],
-                          ),
+          child: FractionallySizedBox(
+            heightFactor: 0.66,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Filter by status',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black87,
                         ),
                       ),
+                      IconButton(
+                        icon: const Icon(Icons.close),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Show only tasks with the selected status.',
+                    style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 14),
+                  Expanded(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        const gap = 8.0;
+                        final itemWidth = (constraints.maxWidth - gap) / 2;
+                        return SingleChildScrollView(
+                          child: Wrap(
+                            spacing: gap,
+                            runSpacing: gap,
+                            children: statusOptions.map((opt) {
+                              final value = opt['value'];
+                              final label = opt['label']!;
+                              final isSelected = _statusFilter == value;
+                              return SizedBox(
+                                width: itemWidth,
+                                child: Material(
+                                  color: Colors.transparent,
+                                  child: InkWell(
+                                    onTap: () {
+                                      setState(() {
+                                        _statusFilter = value;
+                                      });
+                                      Navigator.pop(context);
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 14,
+                                        horizontal: 10,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? _gold.withValues(alpha: 0.12)
+                                            : Colors.grey.shade50,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isSelected
+                                              ? _gold
+                                              : Colors.grey.shade200,
+                                          width: isSelected ? 2 : 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          if (isSelected)
+                                            const Padding(
+                                              padding: EdgeInsets.only(right: 8),
+                                              child: Icon(
+                                                Icons.check_circle,
+                                                color: Color(0xFF6B5B2E),
+                                                size: 18,
+                                              ),
+                                            ),
+                                          Expanded(
+                                            child: Text(
+                                              label,
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontSize: 15,
+                                                fontWeight: isSelected
+                                                    ? FontWeight.w700
+                                                    : FontWeight.w500,
+                                                color: isSelected
+                                                    ? const Color(0xFF6B5B2E)
+                                                    : Colors.grey.shade800,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                }).toList(),
-              ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -1157,8 +1183,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         return Colors.green;
       case 'paused':
         return Colors.amber;
+      case 'hold':
+        return Colors.deepOrange;
       case 'need_help':
         return Colors.red;
+      case 'ignore':
+        return Colors.brown;
       default:
         return Colors.grey;
     }
@@ -1174,8 +1204,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         return Colors.green.shade50;
       case 'paused':
         return Colors.amber.shade50;
+      case 'hold':
+        return Colors.deepOrange.shade50;
       case 'need_help':
         return Colors.red.shade50;
+      case 'ignore':
+        return Colors.brown.shade50;
       default:
         return Colors.grey.shade50;
     }
@@ -1224,7 +1258,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     String title = 'Status Note',
     String hint = 'Add a note for this status (optional)',
   }) async {
-    final controller = TextEditingController();
+    String noteText = '';
     final scaffoldContext = this.context;
     final result = await showDialog<String>(
       context: scaffoldContext,
@@ -1255,7 +1289,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 ),
                 const SizedBox(height: 12),
                 TextField(
-                  controller: controller,
+                  onChanged: (value) => noteText = value,
                   maxLines: 4,
                   autofocus: true,
                   decoration: InputDecoration(
@@ -1273,21 +1307,33 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFF4A3B23)),
+              ),
             ),
             ElevatedButton(
-              onPressed: () {
-                final note = controller.text.trim();
-                Navigator.pop(ctx, note);
-              },
-              style: ElevatedButton.styleFrom(backgroundColor: _gold),
-              child: const Text('Save'),
+              onPressed: () => Navigator.pop(ctx, noteText.trim()),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF4A3B23),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 10,
+                ),
+              ),
+              child: const Text(
+                'Save',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
             ),
           ],
         );
       },
     );
-    controller.dispose();
     return result;
   }
 
@@ -1342,6 +1388,95 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
   }
 
+  String _statusLabel(String status) => status.replaceAll('_', ' ');
+
+  Widget _buildStatusGrid({
+    required String currentStatus,
+    required Future<void> Function(String) onSelected,
+    Future<void> Function()? onMoveToCurrent,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 8.0;
+        final itemWidth = (constraints.maxWidth - gap) / 2;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [
+            ..._taskStatuses.map((status) {
+              final selected = status == currentStatus;
+              final color = _getStatusColor(status);
+              return SizedBox(
+                width: itemWidth,
+                child: ChoiceChip(
+                  showCheckmark: false,
+                  label: SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      _statusLabel(status),
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  selected: selected,
+                  onSelected: (_) => onSelected(status),
+                  selectedColor: color.withValues(alpha: 0.24),
+                  backgroundColor: color.withValues(alpha: 0.1),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: color.withValues(alpha: selected ? 0.5 : 0.3),
+                    ),
+                  ),
+                  labelPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                ),
+              );
+            }).toList(),
+            if (onMoveToCurrent != null)
+              SizedBox(
+                width: itemWidth,
+                child: OutlinedButton.icon(
+                  onPressed: onMoveToCurrent,
+                  icon: const Icon(
+                    Icons.play_circle_fill_rounded,
+                    color: Colors.black87,
+                    size: 18,
+                  ),
+                  label: const Text(
+                    'current task',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.black87,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    side: BorderSide(color: Colors.blue.withValues(alpha: 0.45)),
+                    backgroundColor: Colors.blue.withValues(alpha: 0.08),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
   /// Show small popup to pick subtask status; then call onSelected (async supported for need_help note).
   Future<void> _showSubtaskStatusPicker({
     required BuildContext context,
@@ -1350,13 +1485,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }) async {
     await showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (ctx) {
         return SafeArea(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1366,29 +1502,12 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _taskStatuses.map((s) {
-                    final selected = s == currentStatus;
-                    final color = _getStatusColor(s);
-                    return ChoiceChip(
-                      label: Text(
-                        s.replaceAll('_', ' '),
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: selected ? color : Colors.grey.shade800,
-                        ),
-                      ),
-                      selected: selected,
-                      onSelected: (_) async {
-                        Navigator.pop(ctx);
-                        await onSelected(s);
-                      },
-                      selectedColor: color.withValues(alpha: 0.2),
-                      backgroundColor: Colors.grey.shade100,
-                    );
-                  }).toList(),
+                _buildStatusGrid(
+                  currentStatus: currentStatus,
+                  onSelected: (s) async {
+                    Navigator.pop(ctx);
+                    await onSelected(s);
+                  },
                 ),
               ],
             ),
@@ -1527,6 +1646,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 ),
                 const SizedBox(height: 10),
                 Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
                       padding: const EdgeInsets.all(8),
@@ -1552,15 +1672,18 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                               fontWeight: FontWeight.w700,
                               color: Colors.black87,
                             ),
-                            softWrap: true,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '$categoryLabel • $statusLabel',
+                            '$categoryLabel - $statusLabel',
                             style: TextStyle(
                               fontSize: 11,
                               color: Colors.grey.shade600,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           if (task.isCurrent) ...[
                             const SizedBox(height: 4),
@@ -1593,23 +1716,43 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                         onTap: canChangeStatus
                             ? () => _openStatusChange(task)
                             : null,
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Ink(
                           decoration: BoxDecoration(
-                            color: statusColor.withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
+                            color: accentColor.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(8),
                             border: Border.all(
-                              color: statusColor,
-                              width: 1.5,
+                              color: accentColor.withValues(alpha: 0.35),
                             ),
                           ),
-                          child: Icon(
-                            Icons.flag,
-                            size: 16,
-                            color: canChangeStatus
-                                ? statusColor
-                                : statusColor.withValues(alpha: 0.5),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 5,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.flag,
+                                  size: 16,
+                                  color: canChangeStatus
+                                      ? accentColor
+                                      : accentColor.withValues(alpha: 0.55),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  statusLabel.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: canChangeStatus
+                                        ? accentColor
+                                        : accentColor.withValues(alpha: 0.55),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
@@ -1711,23 +1854,49 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                                 },
                                               )
                                             : null,
-                                        borderRadius: BorderRadius.circular(20),
-                                        child: Container(
-                                          padding: const EdgeInsets.all(6),
+                                        borderRadius: BorderRadius.circular(8),
+                                        child: Ink(
                                           decoration: BoxDecoration(
-                                            color: color.withValues(alpha: 0.15),
-                                            shape: BoxShape.circle,
+                                            color: color.withValues(alpha: 0.14),
+                                            borderRadius: BorderRadius.circular(8),
                                             border: Border.all(
-                                              color: color,
-                                              width: 1.5,
+                                              color: color.withValues(alpha: 0.35),
                                             ),
                                           ),
-                                          child: Icon(
-                                            Icons.flag,
-                                            size: 16,
-                                            color: canChangeStatus
-                                                ? color
-                                                : color.withValues(alpha: 0.5),
+                                          child: Padding(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 5,
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.flag,
+                                                  size: 16,
+                                                  color: canChangeStatus
+                                                      ? color
+                                                      : color.withValues(
+                                                          alpha: 0.55,
+                                                        ),
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  st.status
+                                                      .replaceAll('_', ' ')
+                                                      .toUpperCase(),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: canChangeStatus
+                                                        ? color
+                                                        : color.withValues(
+                                                            alpha: 0.55,
+                                                          ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -1736,41 +1905,54 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                 ),
                               ),
                               if (showSubtaskHelp) ...[
-                                const SizedBox(height: 4),
+                                    const SizedBox(height: 6),
                                 Padding(
                                   padding: const EdgeInsets.only(left: 8),
                                   child: Container(
+                                        width: double.infinity,
                                     padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 6,
+                                          horizontal: 10,
+                                          vertical: 8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(6),
+                                          color: color.withValues(alpha: 0.08),
+                                          borderRadius: BorderRadius.circular(8),
                                       border: Border.all(
-                                        color: Colors.red.shade200,
+                                            color: color,
+                                            width: 1.5,
                                       ),
                                     ),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Icon(
-                                          Icons.help_outline,
-                                          size: 14,
-                                          color: Colors.red.shade700,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Expanded(
-                                          child: Text(
-                                            st.needHelpNote!,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade800,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.sticky_note_2_outlined,
+                                                  size: 16,
+                                                  color: color,
+                                                ),
+                                                const SizedBox(width: 6),
+                                                Text(
+                                                  'Status note',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: color,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              st.needHelpNote!,
+                                              style: TextStyle(
+                                                fontSize: 13,
+                                                color: color,
+                                                height: 1.3,
                                           ),
+                                              softWrap: true,
                                         ),
                                       ],
                                     ),
@@ -2357,7 +2539,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     'in_progress',
     'completed',
     'paused',
+    'hold',
     'need_help',
+    'ignore',
   ];
 
   Future<void> _openTaskEdit(Task task) async {
@@ -2921,195 +3105,74 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }
 
   Future<void> _openStatusChange(Task task) async {
-    String selectedStatus = task.status;
     final scaffoldContext = this.context;
 
     await showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Padding(
-              padding: EdgeInsets.fromLTRB(
-                16,
-                12,
-                16,
-                MediaQuery.of(context).viewInsets.bottom + 16,
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Change Status',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Task status',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 12),
+                _buildStatusGrid(
+                  currentStatus: task.status,
+                  onSelected: (selectedStatus) async {
+                    Navigator.pop(sheetContext);
+                    final note = await _showNeedHelpNoteDialog(
+                      title: 'Status Note',
+                      hint:
+                          'Add a note for status: ${selectedStatus.replaceAll('_', ' ').toUpperCase()} (optional)',
+                    );
+                    if (note == null) return;
+                    try {
+                      await TaskService.updateTaskStatus(
+                        task.id,
+                        selectedStatus,
+                        needHelpNote: note,
+                        userId: widget.userId,
+                        userRole: widget.userRole,
+                      );
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                        SnackBar(
+                          content: const Text('Status updated'),
+                          backgroundColor: Colors.green.shade700,
+                        ),
+                      );
+                      _fetchTasks();
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(scaffoldContext).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            e.toString().replaceFirst('Exception: ', '').trim(),
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close),
-                          onPressed: () => Navigator.pop(context),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      children: [
-                        _statusChoiceChip(
-                          'assigned',
-                          'Assigned',
-                          selectedStatus,
-                          (val) => setModalState(() {
-                            selectedStatus = val;
-                          }),
-                        ),
-                        _statusChoiceChip(
-                          'in_progress',
-                          'In Progress',
-                          selectedStatus,
-                          (val) => setModalState(() {
-                            selectedStatus = val;
-                          }),
-                        ),
-                        _statusChoiceChip(
-                          'completed',
-                          'Completed',
-                          selectedStatus,
-                          (val) => setModalState(() {
-                            selectedStatus = val;
-                          }),
-                        ),
-                        _statusChoiceChip(
-                          'paused',
-                          'Paused',
-                          selectedStatus,
-                          (val) => setModalState(() {
-                            selectedStatus = val;
-                          }),
-                        ),
-                        _statusChoiceChip(
-                          'need_help',
-                          'Need Help',
-                          selectedStatus,
-                          (val) => setModalState(() {
-                            selectedStatus = val;
-                          }),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 44,
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(context);
-                          await _moveTaskToCurrent(task);
-                        },
-                        icon: const Icon(
-                          Icons.play_circle_fill_rounded,
-                          color: Colors.blue,
-                        ),
-                        label: const Text(
-                          'Move To Current Task',
-                          style: TextStyle(color: Colors.blue),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.blue.shade200),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 46,
-                      child: ElevatedButton(
-                        onPressed: () async {
-                          final note = await _showNeedHelpNoteDialog(
-                            title: 'Status Note',
-                            hint:
-                                'Add a note for status: ${selectedStatus.replaceAll('_', ' ').toUpperCase()} (optional)',
-                          );
-                          if (note == null) return;
-                          try {
-                            await TaskService.updateTaskStatus(
-                              task.id,
-                              selectedStatus,
-                              needHelpNote: note,
-                              userId: widget.userId,
-                              userRole: widget.userRole,
-                            );
-                            if (!mounted) return;
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                              SnackBar(
-                                content: const Text('Status updated'),
-                                backgroundColor: Colors.green.shade700,
-                              ),
-                            );
-                            _fetchTasks();
-                          } catch (e) {
-                            if (!mounted) return;
-                            ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  e
-                                      .toString()
-                                      .replaceFirst('Exception: ', '')
-                                      .trim(),
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _gold,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text(
-                          'Submit',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                    ),
-                  ],
+                      );
+                    }
+                  },
+                  onMoveToCurrent: () async {
+                    Navigator.pop(sheetContext);
+                    await _moveTaskToCurrent(task);
+                  },
                 ),
-              ),
-            );
-          },
+              ],
+            ),
+          ),
         );
       },
-    );
-  }
-
-  Widget _statusChoiceChip(
-    String value,
-    String label,
-    String selected,
-    void Function(String) onSelected,
-  ) {
-    final isSelected = value == selected;
-    final color = _getStatusColor(value);
-    return ChoiceChip(
-      label: Text(label),
-      selected: isSelected,
-      onSelected: (_) => onSelected(value),
-      selectedColor: color.withValues(alpha: 0.15),
-      backgroundColor: Colors.grey.shade100,
-      labelStyle: TextStyle(
-        color: isSelected ? color : Colors.grey.shade700,
-        fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-      ),
     );
   }
 }

@@ -339,7 +339,7 @@ class _NotepadScreenState extends State<NotepadScreen> {
   Widget build(BuildContext context) {
     if (_isDetailMode) {
       return Scaffold(
-        backgroundColor: const Color(0xFFF5F5F7),
+        backgroundColor: const Color.fromARGB(255, 253, 252, 232),
         appBar: AppBar(
           backgroundColor: _gold,
           foregroundColor: Colors.white,

@@ -33,7 +33,10 @@ class AdminDashboard extends StatefulWidget {
 class _AdminDashboardState extends State<AdminDashboard> {
   int _selectedIndex = 0;
   String _tasksInitialViewMode = 'self'; // 'self' or 'employee'
+  String _tasksCurrentViewMode = 'self';
   bool _lockTasksViewMode = false;
+  final GlobalKey<TasksScreenState> _tasksScreenKey =
+      GlobalKey<TasksScreenState>();
 
   bool _isStatsLoading = true;
   int _totalEmployees = 0;
@@ -257,7 +260,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         }
       },
       child: Scaffold(
-        backgroundColor: Colors.grey.shade50,
+       backgroundColor: const Color.fromARGB(255, 253, 252, 232),
         appBar: AppBar(
           leading: _selectedIndex == 0
               ? Builder(
@@ -282,6 +285,14 @@ class _AdminDashboardState extends State<AdminDashboard> {
           ),
           elevation: 0,
           actions: [
+            if (_selectedIndex == 2 && _tasksCurrentViewMode == 'self')
+              IconButton(
+                icon: const Icon(Icons.filter_list_rounded),
+                tooltip: 'Status filter',
+                onPressed: () {
+                  _tasksScreenKey.currentState?.openStatusFilterFromAppBar();
+                },
+              ),
             buildCalculatorAppBarAction(context),
             IconButton(
               icon: const Icon(Icons.chat_bubble_outline),
@@ -333,6 +344,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
               _selectedIndex = index;
               if (index == 2) {
                 _tasksInitialViewMode = 'self';
+                _tasksCurrentViewMode = 'self';
                 _lockTasksViewMode = false; // opened from drawer, allow switching
               }
             });
@@ -392,6 +404,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   () {
                     setState(() {
                       _tasksInitialViewMode = 'self';
+                      _tasksCurrentViewMode = 'self';
                       _selectedIndex = 2;
                       _lockTasksViewMode = true; // opened from card, lock mode
                     });
@@ -410,6 +423,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   () {
                     setState(() {
                       _tasksInitialViewMode = 'employee';
+                      _tasksCurrentViewMode = 'employee';
                       _selectedIndex = 2;
                       _lockTasksViewMode = true; // opened from card, lock mode
                     });
@@ -459,10 +473,19 @@ class _AdminDashboardState extends State<AdminDashboard> {
 
   Widget _buildTasksScreen() {
     return TasksScreen(
+      key: _tasksScreenKey,
       userId: widget.userId ?? 'admin-user-id',
       userRole: widget.userRole,
       initialViewMode: _tasksInitialViewMode,
       lockViewMode: _lockTasksViewMode,
+      onViewModeChanged: (mode) {
+        if (!mounted) return;
+        if (_tasksCurrentViewMode != mode) {
+          setState(() {
+            _tasksCurrentViewMode = mode;
+          });
+        }
+      },
     );
   }
 
@@ -522,41 +545,71 @@ class _AdminDashboardState extends State<AdminDashboard> {
     String subtitle,
     VoidCallback onTap,
   ) {
-    return Card(
-      elevation: 3,
-      shadowColor: color.withValues(alpha: 0.3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  shape: BoxShape.circle,
+    final borderRadius = BorderRadius.circular(16);
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF9F7EE), Color(0xFFF2ECDC)],
+        ),
+        border: Border.all(
+          color: color.withValues(alpha: 0.35),
+          width: 1.25,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.white.withValues(alpha: 0.72),
+            blurRadius: 8,
+            offset: const Offset(-2, -2),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: color.withValues(alpha: 0.16),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: borderRadius,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: color.withValues(alpha: 0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 36, color: color),
                 ),
-                child: Icon(icon, size: 36, color: color),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                const SizedBox(height: 12),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
           ),
         ),
       ),
