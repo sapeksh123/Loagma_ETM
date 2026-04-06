@@ -188,6 +188,18 @@ class _EmployeeNotificationsScreenState
           final icon = isReminder ? Icons.alarm : Icons.update;
           final color = isReminder ? Colors.orange : Colors.blue;
           final noteColor = _noteColor(n);
+          final rawMessage = n.message.trim();
+          final noteMatch = RegExp(
+            r'\bnote\s*:',
+            caseSensitive: false,
+          ).firstMatch(rawMessage);
+          final noteStart = noteMatch?.start ?? -1;
+          final mainMessage = noteStart >= 0
+            ? rawMessage.substring(0, noteStart).trim()
+            : rawMessage;
+          final noteMessage = noteStart >= 0
+            ? rawMessage.substring(noteStart).trim()
+            : null;
 
           return Card(
             margin: const EdgeInsets.only(bottom: 12),
@@ -256,17 +268,46 @@ class _EmployeeNotificationsScreenState
                             ),
                           ),
                           const SizedBox(height: 2),
-                          Text(
-                            n.message,
-                            style: TextStyle(
-                              fontSize: 15,
-                              height: 1.35,
-                              color: noteColor,
-                              fontWeight: FontWeight.w500,
+                          if (mainMessage.isNotEmpty)
+                            Text(
+                              mainMessage,
+                              style: TextStyle(
+                                fontSize: 15,
+                                height: 1.35,
+                                color: noteColor,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 4,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            maxLines: 4,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          if (noteMessage != null && noteMessage.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: color.withValues(alpha: 0.35),
+                                ),
+                              ),
+                              child: Text(
+                                noteMessage,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  height: 1.35,
+                                  color: color.withValues(alpha: 0.95),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 6),
                           Text(
                             _formatTimestamp(n.createdAt),

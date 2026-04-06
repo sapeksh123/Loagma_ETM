@@ -562,8 +562,8 @@ Future<void> _openTaskDetails(Task task) async {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 3,
-      shadowColor: Colors.black.withOpacity(0.06),
+      elevation: 0,
+      shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => _openTaskDetails(task),
@@ -572,7 +572,14 @@ Future<void> _openTaskDetails(Task task) async {
           decoration: BoxDecoration(
             color: _getStatusBackground(task.status),
             borderRadius: BorderRadius.circular(14),
-            border: Border(left: BorderSide(color: statusColor, width: 4)),
+            border: Border.all(color: statusColor, width: 2.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.10),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),

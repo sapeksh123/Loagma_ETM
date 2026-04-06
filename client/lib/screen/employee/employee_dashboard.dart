@@ -1,6 +1,9 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../widgets/attendance_card.dart';
+import '../../models/notification_model.dart';
 import '../../models/task_model.dart';
 import '../../services/auth_service.dart';
 import '../../services/task_service.dart';
@@ -50,6 +53,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   String? _assignmentByFilter;
   int _unreadNotifications = 0;
   int _unreadChats = 0;
+  NotificationModel? _latestNotification;
 
   @override
   void initState() {
@@ -58,11 +62,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }
 
   Future<void> _loadDashboardData() async {
-    await Future.wait([
-      _fetchTasks(),
-      _loadNotificationsSummary(),
-      _loadChatSummary(),
-    ]);
+    // Start independently so slow notification/chat calls do not delay
+    // main dashboard task rendering.
+    _fetchTasks();
+    _loadNotificationsSummary();
+    _loadChatSummary();
   }
 
   Future<void> _fetchTasks() async {
@@ -76,6 +80,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       final response = await TaskService.getTasks(
         widget.userId,
         widget.userRole,
+        includeHistory: false,
       );
 
       if (response['status'] == 'success') {
@@ -103,12 +108,281 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     try {
       final list = await NotificationService.fetchNotifications(widget.userId);
       if (!mounted) return;
+      final visibleItems = list.where((n) {
+        final title = _normalizedVisibleText(n.title);
+        final message = _normalizedVisibleText(n.message);
+        return title.isNotEmpty || message.isNotEmpty;
+      }).toList();
+      NotificationModel? latest;
+      if (visibleItems.isNotEmpty) {
+        latest = visibleItems.reduce(
+          (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
+        );
+      }
       setState(() {
         _unreadNotifications = list.where((n) => !n.isRead).length.clamp(0, 99);
+        _latestNotification = latest;
       });
     } catch (_) {
       // Ignore errors for badge; keep badge at 0 on failure.
     }
+  }
+
+  String _normalizedVisibleText(String? raw) {
+    if (raw == null) return '';
+    return raw
+        .replaceAll(RegExp(r'<[^>]*>'), ' ')
+        .replaceAll('&nbsp;', ' ')
+        .replaceAll('&zwnj;', '')
+        .replaceAll('&zwj;', '')
+        .replaceAll('&ZeroWidthSpace;', '')
+        .replaceAll(RegExp(r'[\u0000-\u001F\u007F]'), ' ')
+        .replaceAll(RegExp(r'[\u00A0\u1680\u180E\u2000-\u200F\u2028-\u202F\u205F\u2060\u3000\uFEFF]'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+  }
+
+  String _formatDashboardNotificationTime(DateTime value) {
+    final local = value.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final date = DateTime(local.year, local.month, local.day);
+    final diff = today.difference(date).inDays;
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    if (diff == 0) return 'Today · $hour:$minute $suffix';
+    if (diff == 1) return 'Yesterday · $hour:$minute $suffix';
+    return '${local.day.toString().padLeft(2, '0')}/${local.month.toString().padLeft(2, '0')}/${local.year} · $hour:$minute $suffix';
+  }
+
+  Future<void> _openNotificationsScreen() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EmployeeNotificationsScreen(
+          userId: widget.userId,
+          userRole: widget.userRole,
+        ),
+      ),
+    );
+    _loadNotificationsSummary();
+  }
+
+  Widget _buildLatestNotificationCard() {
+    final latest = _latestNotification;
+    if (latest == null) return const SizedBox.shrink();
+    final titleText = _normalizedVisibleText(latest.title);
+    final messageText = _normalizedVisibleText(latest.message);
+    if (titleText.isEmpty && messageText.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final icon = latest.type == 'reminder' ? Icons.alarm : Icons.update;
+    final iconColor = latest.type == 'reminder' ? Colors.orange : Colors.blue;
+    final accentColor = latest.isRead ? const Color(0xFFB89A52) : iconColor;
+    final statusLabel = latest.type.toUpperCase();
+    final noteIndex = messageText.toLowerCase().indexOf('note:');
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: _openNotificationsScreen,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.96),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: accentColor.withValues(alpha: 0.50),
+                    width: 1.4,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: accentColor.withValues(alpha: 0.18),
+                      blurRadius: 18,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 6),
+                    ),
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: iconColor.withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 16, color: iconColor),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: accentColor.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: accentColor.withValues(alpha: 0.45),
+                              ),
+                            ),
+                            child: Text(
+                              'LATEST NOTIFICATION',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: accentColor,
+                                letterSpacing: 0.35,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(
+                                color: accentColor.withValues(alpha: 0.65),
+                              ),
+                            ),
+                            child: Text(
+                              statusLabel,
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w800,
+                                color: accentColor,
+                                letterSpacing: 0.25,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              titleText.isEmpty
+                                  ? 'Latest notification'
+                                  : titleText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                          if (!latest.isRead)
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: iconColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 3),
+                      if (noteIndex >= 0)
+                        RichText(
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          text: TextSpan(
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              color: Colors.grey.shade900,
+                              height: 1.35,
+                            ),
+                            children: [
+                              if (noteIndex > 0)
+                                TextSpan(text: messageText.substring(0, noteIndex)),
+                              TextSpan(
+                                text: messageText.substring(noteIndex),
+                                style: TextStyle(
+                                  color: accentColor,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Text(
+                          messageText,
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.grey.shade900,
+                            height: 1.35,
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Text(
+                            _formatDashboardNotificationTime(latest.createdAt),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            'Open',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: accentColor,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            size: 14,
+                            color: accentColor,
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadChatSummary() async {
@@ -171,6 +445,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   void _showStatusFilterPopup(BuildContext context) {
     const statusOptions = [
       {'value': null, 'label': 'All statuses'},
+      {'value': 'hidden', 'label': 'Hidden tasks'},
       {'value': 'assigned', 'label': 'Assigned'},
       {'value': 'in_progress', 'label': 'In progress'},
       {'value': 'completed', 'label': 'Completed'},
@@ -231,13 +506,20 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                             children: statusOptions.map((opt) {
                               final value = opt['value'];
                               final label = opt['label']!;
-                              final isSelected = _statusFilter == value;
+                              final isHiddenOption = value == 'hidden';
+                              final isSelected =
+                                  !isHiddenOption && _statusFilter == value;
                               return SizedBox(
                                 width: itemWidth,
                                 child: Material(
                                   color: Colors.transparent,
                                   child: InkWell(
                                     onTap: () {
+                                      if (isHiddenOption) {
+                                        Navigator.pop(context);
+                                        _openHiddenTasks();
+                                        return;
+                                      }
                                       setState(() {
                                         _statusFilter = value;
                                       });
@@ -308,21 +590,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         );
       },
     );
-  }
-
-  String _assignmentFilterLabel(String value) {
-    switch (value) {
-      case 'self':
-        return 'Assigned to Self';
-      case 'admin':
-        return 'Assigned by Admin';
-      case 'subadmin':
-        return 'Assigned by Sub-Admin';
-      case 'techincharge':
-        return 'Assigned by Tech Incharge';
-      default:
-        return 'All assignment types';
-    }
   }
 
   void _showAssignmentByFilterPopup(BuildContext context) {
@@ -639,6 +906,172 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     );
   }
 
+  Widget _buildBottomUtilityAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    int? badgeCount,
+  }) {
+    final showBadge = (badgeCount ?? 0) > 0;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4E8C6).withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(icon, size: 22, color: const Color(0xFF4F3E16)),
+                    if (showBadge)
+                      Positioned(
+                        right: -9,
+                        top: -6,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.redAccent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            (badgeCount ?? 0) > 9
+                                ? '9+'
+                                : (badgeCount ?? 0).toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                    color: Color(0xFF4F3E16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomUtilityBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFAEE),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+          border: Border(
+            top: BorderSide(color: const Color(0xFFD8CDAA)),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.calculate_outlined,
+                label: 'Calculator',
+                onTap: () {
+                  final calculatorAction = buildCalculatorAppBarAction(context);
+                  if (calculatorAction is IconButton) {
+                    calculatorAction.onPressed?.call();
+                  }
+                },
+              ),
+            ),
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.add_task,
+                label: 'New Task',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => CreateTaskScreen(
+                        userId: widget.userId,
+                        userRole: widget.userRole,
+                        showAssignToSelector: false,
+                      ),
+                    ),
+                  ).then((value) {
+                    if (value == true) {
+                      _fetchTasks();
+                    }
+                  });
+                },
+              ),
+            ),
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.chat_bubble_outline,
+                label: 'Chat',
+                badgeCount: _unreadChats,
+                onTap: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => EmployeeChatListScreen(
+                        userId: widget.userId,
+                        userRole: widget.userRole,
+                      ),
+                    ),
+                  );
+                  _loadChatSummary();
+                },
+              ),
+            ),
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.note_alt_outlined,
+                label: 'Notepad',
+                onTap: () async {
+                  await showNotepadPopup(
+                    context,
+                    userId: widget.userId,
+                    userRole: widget.userRole,
+                    userName: widget.userName,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -655,18 +1088,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ),
             elevation: 0,
             actions: [
-              buildNotepadAppBarAction(
-                context,
-                userId: widget.userId,
-                userRole: widget.userRole,
-                userName: widget.userName,
-              ),
-              buildCalculatorAppBarAction(context),
-              IconButton(
-                icon: const Icon(Icons.visibility_off_outlined),
-                tooltip: 'Hidden tasks',
-                onPressed: _openHiddenTasks,
-              ),
               IconButton(
                 icon: Icon(
                   _assignmentByFilter != null
@@ -676,9 +1097,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       ? Colors.black87
                       : Colors.white,
                 ),
-                tooltip: _assignmentByFilter != null
-                    ? 'Filter: ${_assignmentFilterLabel(_assignmentByFilter!)} (tap to change)'
-                    : 'Filter by assignment',
+                tooltip: 'Filter by assignment',
                 onPressed: () => _showAssignmentByFilterPopup(context),
               ),
               IconButton(
@@ -688,54 +1107,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                       : Icons.filter_list_outlined,
                   color: _statusFilter != null ? Colors.black87 : Colors.white,
                 ),
-                tooltip: _statusFilter != null
-                    ? 'Filter: ${_statusFilter!.replaceAll('_', ' ')} (tap to change)'
-                    : 'Filter by status',
+                tooltip: 'Filter by status',
                 onPressed: () => _showStatusFilterPopup(context),
-              ),
-              IconButton(
-                icon: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    const Icon(Icons.chat_bubble_outline),
-                    if (_unreadChats > 0)
-                      Positioned(
-                        right: -2,
-                        top: -2,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.redAccent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            _unreadChats > 9 ? '9+' : _unreadChats.toString(),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                tooltip: 'Chat',
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => EmployeeChatListScreen(
-                        userId: widget.userId,
-                        userRole: widget.userRole,
-                      ),
-                    ),
-                  );
-                  _loadChatSummary();
-                },
               ),
               IconButton(
                 icon: Stack(
@@ -770,18 +1143,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   ],
                 ),
                 tooltip: 'Notifications',
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => EmployeeNotificationsScreen(
-                        userId: widget.userId,
-                        userRole: widget.userRole,
-                      ),
-                    ),
-                  );
-                  _loadNotificationsSummary();
-                },
+                onPressed: _openNotificationsScreen,
               ),
             ],
           ),
@@ -988,32 +1350,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
             ),
           ),
 
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CreateTaskScreen(
-                    userId: widget.userId,
-                    userRole: widget.userRole,
-                    showAssignToSelector: false,
-                  ),
-                ),
-              ).then((value) {
-                if (value == true) {
-                  _fetchTasks();
-                }
-              });
-            },
-            icon: const Icon(Icons.add_task),
-            label: const Text('New Task'),
-            elevation: 4,
-          ),
-
           body: Column(
             children: [
-              const SizedBox(height: 16),
-
+            
               /// 🔹 Category Tabs
               Container(
                 decoration: BoxDecoration(
@@ -1070,6 +1409,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 ),
               ),
 
+              _buildLatestNotificationCard(),
+
               /// 🔹 Task List
               Expanded(
                 child: TabBarView(
@@ -1086,6 +1427,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
               ),
             ],
           ),
+          bottomNavigationBar: _buildBottomUtilityBar(),
         ),
       ),
     );
@@ -1547,7 +1889,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     final canDelete = _canDeleteTask(task);
     final priorityColor = _getPriorityColor(task.priority);
     final isNeedHelp = task.status == 'need_help';
-    final cardBorderColor = isNeedHelp ? Colors.grey : accentColor;
     final cardBackground = task.isCurrent
       ? Colors.blue.shade50.withValues(alpha: 0.5)
       : isNeedHelp
@@ -1560,8 +1901,8 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 3,
-      shadowColor: Colors.black.withValues(alpha: 0.06),
+      elevation: 0,
+      shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => _openTaskDetails(task),
@@ -1571,7 +1912,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           decoration: BoxDecoration(
             color: cardBackground,
             borderRadius: BorderRadius.circular(14),
-            border: Border(left: BorderSide(color: cardBorderColor, width: 4)),
+            border: Border.all(color: statusColor, width: 2.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),

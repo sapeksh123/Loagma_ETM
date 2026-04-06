@@ -5,7 +5,10 @@ import '../../services/user_service.dart';
 import '../../services/notification_service.dart';
 import '../../models/task_model.dart';
 import 'create_task_screen.dart';
+import 'admin_chat_list_screen.dart';
 import '../task/hidden_tasks_screen.dart';
+import '../../widgets/calculator_app_bar_action.dart';
+import '../../widgets/notepad_app_bar_action.dart';
 
 class TasksScreen extends StatefulWidget {
   final String userId;
@@ -1745,6 +1748,117 @@ class TasksScreenState extends State<TasksScreen> {
     );
   }
 
+  Widget _buildBottomUtilityAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4E8C6).withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 22, color: const Color(0xFF4F3E16)),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                    color: Color(0xFF4F3E16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomUtilityBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFAEE),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+          border: Border(
+            top: BorderSide(
+              color: const Color(0xFFD8CDAA),
+            ),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.calculate_outlined,
+                label: 'Calculator',
+                onTap: () {
+                  final calculatorAction = buildCalculatorAppBarAction(context);
+                  if (calculatorAction is IconButton) {
+                    calculatorAction.onPressed?.call();
+                  }
+                },
+              ),
+            ),
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.chat_bubble_outline,
+                label: 'Chat',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AdminChatListScreen(
+                        userId: widget.userId,
+                        userRole: widget.userRole,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.note_alt_outlined,
+                label: 'Notepad',
+                onTap: () async {
+                  await showNotepadPopup(
+                    context,
+                    userId: widget.userId,
+                    userRole: widget.userRole,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1832,6 +1946,7 @@ class TasksScreenState extends State<TasksScreen> {
         icon: const Icon(Icons.add_task),
         label: const Text('New Task'),
       ),
+      bottomNavigationBar: _buildBottomUtilityBar(),
     );
   }
 
@@ -1898,11 +2013,9 @@ class TasksScreenState extends State<TasksScreen> {
       );
     }
 
-    final isManagerEmployeeView = _isManagerRole && _viewMode == 'employee';
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
@@ -1916,90 +2029,31 @@ class TasksScreenState extends State<TasksScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(
-                isManagerEmployeeView
-                    ? Icons.category_outlined
-                    : (_filtersExpanded
-                          ? Icons.filter_list
-                          : Icons.filter_list_outlined),
-                size: 20,
-                color: const Color(0xFF9E9E9E),
-              ),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Filters',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade800,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      _buildFilterSummary(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+          if (_isManagerRole) ...[
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildCategoryChip('All', 'all'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Daily', 'daily'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Project', 'project'),
+                  if (_viewMode != 'employee') ...[
+                    const SizedBox(width: 8),
+                    _buildCategoryChip('Personal', 'personal'),
                   ],
-                ),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Monthly', 'monthly'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Quarterly', 'quarterly'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Yearly', 'yearly'),
+                  const SizedBox(width: 8),
+                  _buildCategoryChip('Other', 'other'),
+                ],
               ),
-              if (!isManagerEmployeeView)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        _filtersExpanded
-                            ? Icons.keyboard_arrow_up
-                            : Icons.keyboard_arrow_down,
-                        size: 20,
-                        color: const Color(0xFF9E9E9E),
-                      ),
-                      padding: EdgeInsets.zero,
-                      onPressed: () {
-                        setState(() => _filtersExpanded = !_filtersExpanded);
-                      },
-                    ),
-                  ],
-                ),
-            ],
-          ),
-          if (isManagerEmployeeView || _filtersExpanded) ...[
-            if (_isManagerRole) ...[
-              const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: [
-                    _buildCategoryChip('All', 'all'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Daily', 'daily'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Project', 'project'),
-                    if (_viewMode != 'employee') ...[
-                      const SizedBox(width: 8),
-                      _buildCategoryChip('Personal', 'personal'),
-                    ],
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Monthly', 'monthly'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Quarterly', 'quarterly'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Yearly', 'yearly'),
-                    const SizedBox(width: 8),
-                    _buildCategoryChip('Other', 'other'),
-                  ],
-                ),
-              ),
-            ],
+            ),
           ],
         ],
       ),
@@ -2052,7 +2106,7 @@ class TasksScreenState extends State<TasksScreen> {
         case 'other':
           return 'Category: Other';
         default:
-          return 'Category: All';
+          return '';
       }
     }
 
@@ -2359,8 +2413,8 @@ class TasksScreenState extends State<TasksScreen> {
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      elevation: 3,
-      shadowColor: Colors.black.withValues(alpha: 0.06),
+      elevation: 0,
+      shadowColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       child: InkWell(
         onTap: () => _openTaskDetails(task),
@@ -2374,7 +2428,14 @@ class TasksScreenState extends State<TasksScreen> {
                 ? Colors.blue.shade50.withValues(alpha: 0.5)
                 : _getStatusBackground(task.status),
             borderRadius: BorderRadius.circular(14),
-            border: Border(left: BorderSide(color: accentColor, width: 4)),
+            border: Border.all(color: statusColor, width: 2.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.10),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Padding(
             padding: const EdgeInsets.all(16),

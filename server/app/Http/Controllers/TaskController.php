@@ -84,6 +84,17 @@ class TaskController extends Controller
         return (string) ($task->created_by ?? '') === $actorUserId;
     }
 
+    private static function isSubtasksOnlyUpdateRequest(Request $request): bool
+    {
+        $payload = $request->all();
+        unset($payload['user_id'], $payload['user_role']);
+        if (empty($payload)) {
+            return false;
+        }
+
+        return count(array_diff(array_keys($payload), ['subtasks'])) === 0;
+    }
+
     private static function canUpdateStatusForActor($task, string $actorUserId, string $actorRole): bool
     {
         $createdBy = (string) ($task->created_by ?? '');
@@ -869,7 +880,11 @@ class TaskController extends Controller
                 ], 404);
             }
 
-            if (!self::canEditOrDeleteTaskForActor($task, $userId, $userRole)) {
+            $canEditTask = self::canEditOrDeleteTaskForActor($task, $userId, $userRole);
+            $canSubtasksOnlyUpdate = self::isSubtasksOnlyUpdateRequest($request)
+                && self::canUpdateStatusForActor($task, $userId, $userRole);
+
+            if (!$canEditTask && !$canSubtasksOnlyUpdate) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Not authorized to edit this task'

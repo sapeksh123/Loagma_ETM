@@ -7,6 +7,21 @@ class TaskService {
   static const Duration _tasksCacheTtl = Duration(seconds: 45);
   static final Map<String, Future<Map<String, dynamic>>> _pendingGets = {};
 
+  static String _errorMessageFromResponse(http.Response response) {
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) {
+        final message = decoded['message']?.toString();
+        if (message != null && message.trim().isNotEmpty) {
+          return message.trim();
+        }
+      }
+    } catch (_) {
+      // Ignore parse issues and fall back to status code message.
+    }
+    return 'Server error: ${response.statusCode}';
+  }
+
   static String _tasksCacheKey(
     String userId,
     String userRole, {
@@ -103,7 +118,14 @@ class TaskService {
         );
 
         if (response.statusCode == 200) {
-          final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+          Map<String, dynamic> decoded;
+          try {
+            decoded = jsonDecode(response.body) as Map<String, dynamic>;
+          } on FormatException {
+            throw Exception(
+              'Server returned invalid JSON while loading tasks. Please retry.',
+            );
+          }
           await LocalCacheService.putJson(
             cacheKey,
             decoded,
@@ -111,9 +133,10 @@ class TaskService {
           );
           return decoded;
         } else {
-          throw Exception('Server error: ${response.statusCode}');
+          throw Exception(_errorMessageFromResponse(response));
         }
       } catch (e) {
+        if (e is Exception) rethrow;
         throw Exception('Network error: $e');
       } finally {
         _pendingGets.remove(cacheKey);
@@ -182,9 +205,10 @@ class TaskService {
         await _invalidateTaskCache();
         return decoded;
       } else {
-        throw Exception('Server error: ${response.statusCode}');
+        throw Exception(_errorMessageFromResponse(response));
       }
     } catch (e) {
+      if (e is Exception) rethrow;
       throw Exception('Network error: $e');
     }
   }
@@ -217,9 +241,10 @@ class TaskService {
         await _invalidateTaskCache();
         return decoded;
       } else {
-        throw Exception('Server error: ${response.statusCode}');
+        throw Exception(_errorMessageFromResponse(response));
       }
     } catch (e) {
+      if (e is Exception) rethrow;
       throw Exception('Network error: $e');
     }
   }

@@ -247,6 +247,124 @@ class _AdminDashboardState extends State<AdminDashboard> {
     );
   }
 
+  Widget _buildBottomUtilityAction({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4E8C6).withValues(alpha: 0.45),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 22, color: const Color(0xFF4F3E16)),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                    color: Color(0xFF4F3E16),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomUtilityBar() {
+    return SafeArea(
+      top: false,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFAEE),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.06),
+              blurRadius: 10,
+              offset: const Offset(0, -2),
+            ),
+          ],
+          border: Border(
+            top: BorderSide(color: const Color(0xFFD8CDAA)),
+          ),
+        ),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.calculate_outlined,
+                label: 'Calculator',
+                onTap: () {
+                  final calculatorAction = buildCalculatorAppBarAction(context);
+                  if (calculatorAction is IconButton) {
+                    calculatorAction.onPressed?.call();
+                  }
+                },
+              ),
+            ),
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.chat_bubble_outline,
+                label: 'Chat',
+                onTap: () {
+                  if (widget.userId == null || widget.userId!.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('User id missing. Please re-login as admin.'),
+                      ),
+                    );
+                    return;
+                  }
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AdminChatListScreen(
+                        userId: widget.userId!,
+                        userRole: widget.userRole,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Expanded(
+              child: _buildBottomUtilityAction(
+                icon: Icons.note_alt_outlined,
+                label: 'Notepad',
+                onTap: () async {
+                  await showNotepadPopup(
+                    context,
+                    userId: widget.userId,
+                    userRole: widget.userRole,
+                    userName: widget.userName,
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -293,43 +411,6 @@ class _AdminDashboardState extends State<AdminDashboard> {
                   _tasksScreenKey.currentState?.openStatusFilterFromAppBar();
                 },
               ),
-            buildCalculatorAppBarAction(context),
-            IconButton(
-              icon: const Icon(Icons.chat_bubble_outline),
-              tooltip: 'Chat',
-              onPressed: () {
-                if (widget.userId == null || widget.userId!.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content:
-                          Text('User id missing. Please re-login as admin.'),
-                    ),
-                  );
-                  return;
-                }
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => AdminChatListScreen(
-                      userId: widget.userId!,
-                      userRole: widget.userRole,
-                    ),
-                  ),
-                );
-              },
-            ),
-            IconButton(
-              icon: const Icon(Icons.note_add_outlined),
-              tooltip: 'Notepad',
-              onPressed: () async {
-                await showNotepadPopup(
-                  context,
-                  userId: widget.userId,
-                  userRole: widget.userRole,
-                  userName: widget.userName,
-                );
-              },
-            ),
             IconButton(
               icon: const Icon(Icons.notifications_outlined),
               onPressed: () {},
@@ -358,6 +439,9 @@ class _AdminDashboardState extends State<AdminDashboard> {
           top: false,
           child: _getSelectedScreen(),
         ),
+        bottomNavigationBar: _selectedIndex == 2
+            ? null
+            : _buildBottomUtilityBar(),
       ),
     );
   }

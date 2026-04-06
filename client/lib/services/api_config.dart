@@ -13,7 +13,7 @@ class ApiConfig {
   /// --dart-define=API_BASE_URL=https://example.com/api
   static const bool useProduction = bool.fromEnvironment(
     'USE_PRODUCTION_API',
-    defaultValue: true,
+    defaultValue: false,
   );
 
   static const String productionBaseUrl = 'https://loagma-etm.onrender.com/api';
