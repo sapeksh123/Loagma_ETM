@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../services/task_service.dart';
+import '../../services/task_alarm_service.dart';
 import '../../widgets/calculator_app_bar_action.dart';
 import '../../widgets/notepad_app_bar_action.dart';
 
@@ -54,6 +55,8 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   String? _selectedEmployeeId;
   DateTime? _selectedDate;
   TimeOfDay? _selectedTime;
+  bool _alarmEnabled = true;
+  TimeOfDay _alarmTime = const TimeOfDay(hour: 14, minute: 0);
   bool _isLoading = false;
 
   bool get _isManagerRole =>
@@ -176,6 +179,18 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     }
   }
 
+  Future<void> _selectAlarmTime() async {
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: _alarmTime,
+    );
+    if (picked != null) {
+      setState(() {
+        _alarmTime = picked;
+      });
+    }
+  }
+
   /// Deadline date from preset or custom picker.
   DateTime? _getDeadlineDate() {
     final now = DateTime.now();
@@ -204,6 +219,59 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     return null;
   }
 
+  String _alarmPatternFromPreset() {
+    switch (_deadlinePreset) {
+      case '2days':
+        return '2days';
+      case '1week':
+        return 'week';
+      case 'custom':
+        return 'custom';
+      case 'today':
+      default:
+        return 'today';
+    }
+  }
+
+  String _toYmd(DateTime date) {
+    final year = date.year.toString().padLeft(4, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final day = date.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+
+  String _getAlarmTimeString() {
+    return '${_alarmTime.hour.toString().padLeft(2, '0')}:${_alarmTime.minute.toString().padLeft(2, '0')}:00';
+  }
+
+  DateTime _alarmStartDate() {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  DateTime _alarmEndDate() {
+    final start = _alarmStartDate();
+    switch (_deadlinePreset) {
+      case 'today':
+        return start;
+      case '2days':
+        return start.add(const Duration(days: 1));
+      case '1week':
+        return start.add(const Duration(days: 6));
+      case 'custom':
+        if (_selectedDate != null) {
+          return DateTime(
+            _selectedDate!.year,
+            _selectedDate!.month,
+            _selectedDate!.day,
+          );
+        }
+        return start;
+      default:
+        return start;
+    }
+  }
+
   Future<void> _createTask() async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -216,6 +284,46 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
     try {
       final DateTime? deadlineDate = _getDeadlineDate();
       final String? deadlineTimeStr = _getDeadlineTimeString();
+
+      if (_alarmEnabled) {
+        final permissionStatus =
+            await TaskAlarmService.ensureAlarmPermissions(requestIfNeeded: true);
+        if (!permissionStatus.notificationsEnabled) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Notifications are blocked for this app. Please enable notification permission in phone settings to receive alarms.',
+              ),
+              backgroundColor: Colors.red.shade700,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+          return;
+        }
+      }
+
+      if (_alarmEnabled && _deadlinePreset == 'custom' && _selectedDate == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Please select a custom end date for alarm scheduling.'),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+              margin: const EdgeInsets.all(16),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+          );
+        }
+        return;
+      }
 
       // Server requires assigned_to to be a non-empty string; fallback to self if employee ID missing
       final hasEmployeeId = _selectedEmployeeId != null &&
@@ -263,6 +371,12 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
         'priority': _selectedPriority,
         'deadline_date': deadlineDate?.toIso8601String().split('T')[0],
         'deadline_time': deadlineTimeStr,
+        'alarm_enabled': _alarmEnabled,
+        'alarm_time': _alarmEnabled ? _getAlarmTimeString() : null,
+        'alarm_pattern': _alarmEnabled ? _alarmPatternFromPreset() : null,
+        'alarm_start_date': _alarmEnabled ? _toYmd(_alarmStartDate()) : null,
+        'alarm_end_date': _alarmEnabled ? _toYmd(_alarmEndDate()) : null,
+        'alarm_timezone': 'local',
         'created_by': widget.userId,
         'user_role': widget.userRole,
         'assigned_to': assignedTo,
@@ -271,6 +385,65 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       final response = await TaskService.createTask(taskData);
 
       if (response['status'] == 'success' && mounted) {
+        final dynamic responseData = response['data'];
+        final String? createdTaskId = responseData is Map<String, dynamic>
+            ? responseData['id']?.toString()
+            : null;
+
+        if (_alarmEnabled && createdTaskId != null) {
+          final scheduleTask = <String, dynamic>{
+            ...taskData,
+            'id': createdTaskId,
+            'status': 'assigned',
+          };
+          final scheduledCount = await TaskAlarmService.scheduleFromTaskMap(
+            scheduleTask,
+            actingUserId: widget.userId,
+            actingUserRole: widget.userRole,
+          );
+
+          if (!mounted) return;
+          if (scheduledCount == 0) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: const Text(
+                  'Alarm was not scheduled because selected time already passed for the chosen day(s).',
+                ),
+                backgroundColor: Colors.orange.shade700,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          } else {
+            final permissionStatus =
+                await TaskAlarmService.ensureAlarmPermissions(requestIfNeeded: false);
+            if (!mounted) return;
+
+            final message = permissionStatus.exactAlarmAllowed
+                ? 'Alarm scheduled for $scheduledCount occurrence(s).'
+                : 'Alarm scheduled for $scheduledCount occurrence(s) with battery-optimized mode. For exact timing, allow exact alarms in settings.';
+
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(message),
+                backgroundColor: Colors.green.shade700,
+                behavior: SnackBarBehavior.floating,
+                margin: const EdgeInsets.all(16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                duration: const Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+
+        if (!mounted) return;
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Text('Task created successfully'),
@@ -343,7 +516,6 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -515,6 +687,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                         const SizedBox(height: 12),
                                         _buildDeadlineSelector(),
                                       ],
+                                      const SizedBox(height: 16),
+                                      _buildSectionTitle('Alarm'),
+                                      _buildAlarmSection(),
                                     ],
                                   ),
                                 ),
@@ -535,6 +710,9 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
                                   const SizedBox(height: 12),
                                   _buildDeadlineSelector(),
                                 ],
+                                const SizedBox(height: 16),
+                                _buildSectionTitle('Alarm'),
+                                _buildAlarmSection(),
                               ],
                             ),
                           ),
@@ -1024,6 +1202,67 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  Widget _buildAlarmSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Enable alarm reminder',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: const Text('Rings at selected time even when app is closed.'),
+          value: _alarmEnabled,
+          onChanged: (value) {
+            setState(() {
+              _alarmEnabled = value;
+            });
+          },
+        ),
+        if (_alarmEnabled) ...[
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: _selectAlarmTime,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.alarm, size: 20),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Alarm time: ${_alarmTime.hour.toString().padLeft(2, '0')}:${_alarmTime.minute.toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _deadlinePreset == 'today'
+                ? 'This will ring today at the selected time.'
+                : _deadlinePreset == '2days'
+                    ? 'This will ring today and tomorrow at the selected time.'
+                    : _deadlinePreset == '1week'
+                        ? 'This will ring daily for 7 days at the selected time.'
+                        : 'This will ring daily from today until your custom date.',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ],
     );
   }

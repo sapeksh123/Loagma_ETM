@@ -4,11 +4,13 @@ import 'screen/auth/login_screen.dart';
 import 'screen/auth/otp_screen.dart';
 import 'screen/admin/admin_dashboard.dart';
 import 'services/local_cache_service.dart';
+import 'services/task_alarm_service.dart';
 // Employee dashboard is pushed with runtime user data from OtpScreen.
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LocalCacheService.init();
+  await TaskAlarmService.initialize();
   runApp(const MyApp());
 }
 

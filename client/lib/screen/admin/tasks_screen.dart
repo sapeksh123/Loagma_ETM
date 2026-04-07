@@ -2428,7 +2428,7 @@ class TasksScreenState extends State<TasksScreen> {
                 ? Colors.blue.shade50.withValues(alpha: 0.5)
                 : _getStatusBackground(task.status),
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: statusColor, width: 2.2),
+            border: Border.all(color: statusColor, width: 1.0),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.10),

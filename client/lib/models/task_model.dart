@@ -76,6 +76,12 @@ class Task {
   final bool isCurrent;
   final String? deadlineDate;
   final String? deadlineTime;
+  final bool alarmEnabled;
+  final String? alarmTime;
+  final String? alarmPattern;
+  final String? alarmStartDate;
+  final String? alarmEndDate;
+  final String? alarmTimezone;
   final String createdBy;
   final String assignedTo;
   final String? creatorName;
@@ -101,6 +107,12 @@ class Task {
     this.isCurrent = false,
     this.deadlineDate,
     this.deadlineTime,
+    this.alarmEnabled = false,
+    this.alarmTime,
+    this.alarmPattern,
+    this.alarmStartDate,
+    this.alarmEndDate,
+    this.alarmTimezone,
     required this.createdBy,
     required this.assignedTo,
     this.creatorName,
@@ -200,6 +212,12 @@ class Task {
       isCurrent: _parseBool(json['is_current']),
       deadlineDate: json['deadline_date'],
       deadlineTime: json['deadline_time'],
+      alarmEnabled: _parseBool(json['alarm_enabled']),
+      alarmTime: json['alarm_time']?.toString(),
+      alarmPattern: json['alarm_pattern']?.toString(),
+      alarmStartDate: json['alarm_start_date']?.toString(),
+      alarmEndDate: json['alarm_end_date']?.toString(),
+      alarmTimezone: json['alarm_timezone']?.toString(),
       createdBy: json['created_by'] ?? '',
       assignedTo: json['assigned_to'] ?? '',
       creatorName: json['creator_name'],
@@ -227,6 +245,12 @@ class Task {
       'is_current': isCurrent,
       'deadline_date': deadlineDate,
       'deadline_time': deadlineTime,
+      'alarm_enabled': alarmEnabled,
+      'alarm_time': alarmTime,
+      'alarm_pattern': alarmPattern,
+      'alarm_start_date': alarmStartDate,
+      'alarm_end_date': alarmEndDate,
+      'alarm_timezone': alarmTimezone,
       'created_by': createdBy,
       'assigned_to': assignedTo,
     };

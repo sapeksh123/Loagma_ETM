@@ -169,7 +169,14 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     _loadNotificationsSummary();
   }
 
-  Widget _buildLatestNotificationCard() {
+  bool get _hasLatestNotificationContent {
+    final latest = _latestNotification;
+    if (latest == null) return false;
+    return _normalizedVisibleText(latest.title).isNotEmpty ||
+        _normalizedVisibleText(latest.message).isNotEmpty;
+  }
+
+  Widget _buildLatestNotificationCard({bool inList = false}) {
     final latest = _latestNotification;
     if (latest == null) return const SizedBox.shrink();
     final titleText = _normalizedVisibleText(latest.title);
@@ -185,7 +192,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     final noteIndex = messageText.toLowerCase().indexOf('note:');
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+      padding: inList
+          ? const EdgeInsets.only(bottom: 12)
+          : const EdgeInsets.fromLTRB(16, 10, 16, 8),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
@@ -1409,8 +1418,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                 ),
               ),
 
-              _buildLatestNotificationCard(),
-
               /// 🔹 Task List
               Expanded(
                 child: TabBarView(
@@ -1434,6 +1441,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
   }
 
   Widget _buildTaskTab(String category) {
+    final showLatestHeader = _hasLatestNotificationContent;
     if (_isLoadingTasks && _tasks.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -1500,15 +1508,29 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
         physics: const AlwaysScrollableScrollPhysics(),
-        itemCount: tasksForCategory.length + (_isLoadingTasks ? 1 : 0),
+        itemCount: tasksForCategory.length +
+            (_isLoadingTasks ? 1 : 0) +
+            (showLatestHeader ? 1 : 0),
         itemBuilder: (context, index) {
-          if (_isLoadingTasks && index == 0) {
+          var cursor = 0;
+          if (showLatestHeader) {
+            if (index == cursor) {
+              return _buildLatestNotificationCard(inList: true);
+            }
+            cursor++;
+          }
+
+          if (_isLoadingTasks && index == cursor) {
             return const Padding(
               padding: EdgeInsets.only(bottom: 12),
               child: LinearProgressIndicator(minHeight: 3),
             );
           }
-          final task = tasksForCategory[_isLoadingTasks ? index - 1 : index];
+          if (_isLoadingTasks) {
+            cursor++;
+          }
+
+          final task = tasksForCategory[index - cursor];
           return _buildTaskCard(task);
         },
       ),
@@ -1912,7 +1934,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
           decoration: BoxDecoration(
             color: cardBackground,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: statusColor, width: 2.2),
+            border: Border.all(color: statusColor, width: 1.0),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.10),

@@ -21,6 +21,28 @@ class TaskController extends Controller
         'hold',
     ];
 
+    private static function ensureAlarmColumns(): void
+    {
+        if (!Schema::hasColumn('tasks', 'alarm_enabled')) {
+            DB::statement("ALTER TABLE tasks ADD COLUMN alarm_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER deadline_time");
+        }
+        if (!Schema::hasColumn('tasks', 'alarm_time')) {
+            DB::statement("ALTER TABLE tasks ADD COLUMN alarm_time TIME NULL AFTER alarm_enabled");
+        }
+        if (!Schema::hasColumn('tasks', 'alarm_pattern')) {
+            DB::statement("ALTER TABLE tasks ADD COLUMN alarm_pattern VARCHAR(20) NULL AFTER alarm_time");
+        }
+        if (!Schema::hasColumn('tasks', 'alarm_start_date')) {
+            DB::statement("ALTER TABLE tasks ADD COLUMN alarm_start_date DATE NULL AFTER alarm_pattern");
+        }
+        if (!Schema::hasColumn('tasks', 'alarm_end_date')) {
+            DB::statement("ALTER TABLE tasks ADD COLUMN alarm_end_date DATE NULL AFTER alarm_start_date");
+        }
+        if (!Schema::hasColumn('tasks', 'alarm_timezone')) {
+            DB::statement("ALTER TABLE tasks ADD COLUMN alarm_timezone VARCHAR(120) NULL AFTER alarm_end_date");
+        }
+    }
+
     private static function actorFromRequest(Request $request)
     {
         $userId = $request->input('user_id') ?: $request->query('user_id');
@@ -690,10 +712,18 @@ class TaskController extends Controller
                 'priority' => 'required|in:low,medium,high,critical',
                 'deadline_date' => 'nullable|date',
                 'deadline_time' => 'nullable',
+                'alarm_enabled' => 'nullable|boolean',
+                'alarm_time' => 'nullable|date_format:H:i:s',
+                'alarm_pattern' => 'nullable|in:today,2days,week,custom',
+                'alarm_start_date' => 'nullable|date',
+                'alarm_end_date' => 'nullable|date|after_or_equal:alarm_start_date',
+                'alarm_timezone' => 'nullable|string|max:120',
                 'created_by' => 'required|string',
                 'user_role' => 'nullable|string',
                 'assigned_to' => 'required|string',
             ]);
+
+            self::ensureAlarmColumns();
 
             $actor = self::actorFromRequest($request);
             $actorUserId = $actor['user_id'] ?: ($validated['created_by'] ?? null);
@@ -760,7 +790,7 @@ class TaskController extends Controller
 
             $subtasksRaw = self::getSubtasksFromRequest($request);
             $normalized = self::normalizeSubtasksForStorage($subtasksRaw);
-            $subtasksJson = $normalized !== null && count($normalized) > 0 ? json_encode($normalized) : null;
+            $subtasksJson = $normalized !== null && count($normalized) > 0 ? $normalized : null;
 
             // Ensure subtasks column exists (in case migration was not run)
             if (!Schema::hasColumn('tasks', 'subtasks')) {
@@ -777,6 +807,12 @@ class TaskController extends Controller
                 'status' => 'assigned',
                 'deadline_date' => $validated['deadline_date'] ?? null,
                 'deadline_time' => $validated['deadline_time'] ?? null,
+                'alarm_enabled' => (int) (($validated['alarm_enabled'] ?? false) ? 1 : 0),
+                'alarm_time' => $validated['alarm_time'] ?? null,
+                'alarm_pattern' => $validated['alarm_pattern'] ?? null,
+                'alarm_start_date' => $validated['alarm_start_date'] ?? null,
+                'alarm_end_date' => $validated['alarm_end_date'] ?? null,
+                'alarm_timezone' => $validated['alarm_timezone'] ?? null,
                 'created_by' => $creatorId,
                 'assigned_to' => $assigneeId,
             ]);
@@ -900,8 +936,16 @@ class TaskController extends Controller
                 'status' => 'sometimes|in:assigned,in_progress,completed,paused,need_help,ignore,hold',
                 'deadline_date' => 'nullable|date',
                 'deadline_time' => 'nullable',
+                'alarm_enabled' => 'sometimes|boolean',
+                'alarm_time' => 'nullable|date_format:H:i:s',
+                'alarm_pattern' => 'sometimes|in:today,2days,week,custom',
+                'alarm_start_date' => 'nullable|date',
+                'alarm_end_date' => 'nullable|date|after_or_equal:alarm_start_date',
+                'alarm_timezone' => 'nullable|string|max:120',
                 'assigned_to' => 'sometimes|string',
             ]);
+
+            self::ensureAlarmColumns();
 
             $nextCategory = $validated['category'] ?? $task->category;
             $nextAssignedTo = $validated['assigned_to'] ?? $task->assigned_to;
@@ -921,7 +965,7 @@ class TaskController extends Controller
                 }
                 $subtasksRaw = self::getSubtasksFromRequest($request);
                 $normalized = self::normalizeSubtasksForStorage($subtasksRaw);
-                $update['subtasks'] = $normalized !== null && count($normalized) > 0 ? json_encode($normalized) : null;
+                $update['subtasks'] = $normalized !== null && count($normalized) > 0 ? $normalized : null;
 
                 // For daily tasks, also upsert per-day subtask statuses for today
                 if ($isDaily && $normalized !== null) {
