@@ -123,8 +123,9 @@ class TaskController extends Controller
         $assignedTo = (string) ($task->assigned_to ?? '');
 
         if (self::isManagerRole($actorRole)) {
-            // Managers can change status only on tasks they created.
-            return $createdBy === $actorUserId;
+            // Managers can change status only on self-assigned tasks they created.
+            // If a manager created a task for an employee, only the assignee employee can change status.
+            return $createdBy === $actorUserId && $assignedTo === $actorUserId;
         }
 
         // Employees can change status on their own created tasks.
@@ -790,7 +791,9 @@ class TaskController extends Controller
 
             $subtasksRaw = self::getSubtasksFromRequest($request);
             $normalized = self::normalizeSubtasksForStorage($subtasksRaw);
-            $subtasksJson = $normalized !== null && count($normalized) > 0 ? $normalized : null;
+            $subtasksJson = $normalized !== null && count($normalized) > 0
+                ? json_encode($normalized)
+                : null;
 
             // Ensure subtasks column exists (in case migration was not run)
             if (!Schema::hasColumn('tasks', 'subtasks')) {
@@ -965,7 +968,9 @@ class TaskController extends Controller
                 }
                 $subtasksRaw = self::getSubtasksFromRequest($request);
                 $normalized = self::normalizeSubtasksForStorage($subtasksRaw);
-                $update['subtasks'] = $normalized !== null && count($normalized) > 0 ? $normalized : null;
+                $update['subtasks'] = $normalized !== null && count($normalized) > 0
+                    ? json_encode($normalized)
+                    : null;
 
                 // For daily tasks, also upsert per-day subtask statuses for today
                 if ($isDaily && $normalized !== null) {

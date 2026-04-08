@@ -113,9 +113,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
         final message = _normalizedVisibleText(n.message);
         return title.isNotEmpty || message.isNotEmpty;
       }).toList();
+      final unreadVisibleItems = visibleItems.where((n) => !n.isRead).toList();
       NotificationModel? latest;
-      if (visibleItems.isNotEmpty) {
-        latest = visibleItems.reduce(
+      if (unreadVisibleItems.isNotEmpty) {
+        latest = unreadVisibleItems.reduce(
           (a, b) => a.createdAt.isAfter(b.createdAt) ? a : b,
         );
       }
@@ -125,6 +126,42 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       });
     } catch (_) {
       // Ignore errors for badge; keep badge at 0 on failure.
+    }
+  }
+
+  Future<void> _markLatestNotificationAsRead() async {
+    final latest = _latestNotification;
+    if (latest == null || latest.isRead) return;
+
+    try {
+      await NotificationService.markNotificationRead(
+        notificationId: latest.id,
+        employeeId: widget.userId,
+      );
+      if (!mounted) return;
+
+      setState(() {
+        _latestNotification = null;
+        _unreadNotifications = (_unreadNotifications - 1).clamp(0, 99);
+      });
+
+      // Refresh to pick next unread latest, if any.
+      _loadNotificationsSummary();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', '').trim(),
+          ),
+          backgroundColor: Colors.red.shade600,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      );
     }
   }
 
@@ -365,6 +402,21 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                             ),
                           ),
                           const Spacer(),
+                          if (!latest.isRead)
+                            IconButton(
+                              tooltip: 'Mark as read',
+                              icon: Icon(
+                                Icons.done_all,
+                                size: 18,
+                                color: accentColor,
+                              ),
+                              onPressed: _markLatestNotificationAsRead,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 28,
+                                minHeight: 28,
+                              ),
+                            ),
                           Text(
                             'Open',
                             style: TextStyle(
@@ -1469,7 +1521,13 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
 
     var tasksForCategory = _tasks.where((t) => t.category == category).toList();
-    if (_statusFilter != null) {
+    if (_statusFilter == null) {
+      // Default dashboard view hides completed tasks.
+      // Completed tasks are shown only when the Completed status filter is selected.
+      tasksForCategory = tasksForCategory
+          .where((t) => t.status != 'completed')
+          .toList();
+    } else {
       tasksForCategory = tasksForCategory
           .where((t) => t.status == _statusFilter)
           .toList();
@@ -1902,6 +1960,23 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
   }
 
+  String? _formatCreatedDateLabel(String raw) {
+    final value = raw.trim();
+    if (value.isEmpty) return null;
+
+    final normalized = value.contains(' ') && !value.contains('T')
+        ? value.replaceFirst(' ', 'T')
+        : value;
+    final parsed = DateTime.tryParse(normalized);
+    if (parsed == null) return value;
+
+    final local = parsed.toLocal();
+    final day = local.day.toString().padLeft(2, '0');
+    final month = local.month.toString().padLeft(2, '0');
+    final year = local.year.toString();
+    return '$day/$month/$year';
+  }
+
   Widget _buildTaskCard(Task task) {
     final statusColor = _getStatusColor(task.status);
     final currentColor = Colors.blue.shade700;
@@ -1920,6 +1995,9 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       ? task.category[0].toUpperCase() + task.category.substring(1)
       : 'Task';
     final statusLabel = task.status.replaceAll('_', ' ');
+    final now = DateTime.now();
+    final todayLabel =
+        '${now.day.toString().padLeft(2, '0')}/${now.month.toString().padLeft(2, '0')}/${now.year}';
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -1958,6 +2036,36 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.today,
+                            size: 12,
+                            color: Colors.grey.shade700,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            todayLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
                         color: priorityColor.withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(20),
                       ),
@@ -1981,37 +2089,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                         ],
                       ),
                     ),
-                    if (task.deadlineDate != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.calendar_today,
-                              size: 12,
-                              color: Colors.grey.shade700,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              task.deadlineDate!,
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.grey.shade700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -2385,14 +2462,11 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Expanded(
-                      child: Wrap(
-                        spacing: 10,
-                        runSpacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           if (task.assigneeName != null)
                             Row(
-                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
                                   Icons.person_outline,
@@ -2413,7 +2487,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                               ],
                             ),
                           Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 task.isAssignedToSelf
@@ -2435,6 +2508,27 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                               ),
                             ],
                           ),
+                          if (_formatCreatedDateLabel(task.createdAt) != null)
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.schedule,
+                                  size: 14,
+                                  color: Colors.grey.shade600,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Created: ${_formatCreatedDateLabel(task.createdAt)!}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
                         ],
                       ),
                     ),
@@ -2919,8 +3013,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     final descriptionController = TextEditingController(
       text: task.descriptionOnly ?? '',
     );
-    String taskStatus = task.status;
-    final String initialTaskStatus = task.status;
     String priority = task.priority;
     String category = task.category;
     DateTime? deadlineDate = task.deadlineDate != null
@@ -3013,32 +3105,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                           controller: descriptionController,
                           maxLines: 3,
                           decoration: _inputDecoration('Description'),
-                        ),
-                        const SizedBox(height: 16),
-                        _buildEditSection('Task Status'),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: _taskStatuses.map((s) {
-                            final selected = taskStatus == s;
-                            final color = _getStatusColor(s);
-                            return ChoiceChip(
-                              label: Text(
-                                s.replaceAll('_', ' '),
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: selected
-                                      ? color
-                                      : Colors.grey.shade700,
-                                ),
-                              ),
-                              selected: selected,
-                              onSelected: (_) =>
-                                  setModalState(() => taskStatus = s),
-                              selectedColor: color.withValues(alpha: 0.2),
-                              backgroundColor: Colors.grey.shade100,
-                            );
-                          }).toList(),
                         ),
                         const SizedBox(height: 16),
                         _buildEditSection('Priority'),
@@ -3272,22 +3338,6 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}:00';
                               }
                               try {
-                                if (taskStatus != initialTaskStatus) {
-                                  final statusNote =
-                                      await _showNeedHelpNoteDialog(
-                                        title: 'Status Note',
-                                        hint:
-                                            'Add a note for status: ${taskStatus.replaceAll('_', ' ').toUpperCase()} (optional)',
-                                      );
-                                  if (statusNote == null) return;
-                                  await TaskService.updateTaskStatus(
-                                    task.id,
-                                    taskStatus,
-                                    needHelpNote: statusNote,
-                                    userId: widget.userId,
-                                    userRole: widget.userRole,
-                                  );
-                                }
                                 await TaskService.updateTask(
                                   task.id,
                                   updatedData,

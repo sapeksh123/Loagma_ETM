@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import '../../services/task_service.dart';
 import '../../services/task_alarm_service.dart';
@@ -58,6 +60,29 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
   bool _alarmEnabled = true;
   TimeOfDay _alarmTime = const TimeOfDay(hour: 14, minute: 0);
   bool _isLoading = false;
+  bool _isClosing = false;
+
+  void _popSafely([bool result = true]) {
+    if (!mounted || _isClosing) return;
+    _isClosing = true;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+
+      final navigator = Navigator.of(context);
+      if (!navigator.canPop()) {
+        _isClosing = false;
+        return;
+      }
+
+      try {
+        navigator.pop(result);
+      } catch (_) {
+        // If navigator is still locked in this frame, allow another attempt.
+        _isClosing = false;
+      }
+    });
+  }
 
   bool get _isManagerRole =>
       widget.userRole == 'admin' ||
@@ -385,10 +410,39 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
       final response = await TaskService.createTask(taskData);
 
       if (response['status'] == 'success' && mounted) {
+        final bool subtasksSkipped = response['subtasks_skipped'] == true;
         final dynamic responseData = response['data'];
         final String? createdTaskId = responseData is Map<String, dynamic>
             ? responseData['id']?.toString()
             : null;
+        var subtasksRecovered = false;
+
+        if (subtasksSkipped &&
+            createdTaskId != null &&
+            subtaskList.isNotEmpty) {
+          try {
+            await TaskService.updateTask(
+              createdTaskId,
+              {'subtasks': subtaskList},
+              widget.userId,
+              widget.userRole,
+            );
+            subtasksRecovered = true;
+          } catch (_) {
+            // Try legacy-compatible update payload where subtasks is a JSON string.
+            try {
+              await TaskService.updateTask(
+                createdTaskId,
+                {'subtasks': jsonEncode(subtaskList)},
+                widget.userId,
+                widget.userRole,
+              );
+              subtasksRecovered = true;
+            } catch (_) {
+              subtasksRecovered = false;
+            }
+          }
+        }
 
         if (_alarmEnabled && createdTaskId != null) {
           final scheduleTask = <String, dynamic>{
@@ -446,7 +500,11 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Task created successfully'),
+            content: Text(
+              subtasksSkipped && !subtasksRecovered
+                  ? 'Task created. Subtasks were skipped due to a server issue.'
+                  : 'Task created successfully',
+            ),
             backgroundColor: Colors.green.shade600,
             behavior: SnackBarBehavior.floating,
             margin: const EdgeInsets.all(16),
@@ -456,7 +514,7 @@ class _CreateTaskScreenState extends State<CreateTaskScreen> {
             duration: const Duration(seconds: 3),
           ),
         );
-        Navigator.pop(context, true);
+        _popSafely(true);
       } else if (mounted) {
         final message =
             (response['message'] ?? 'Failed to create task').toString();

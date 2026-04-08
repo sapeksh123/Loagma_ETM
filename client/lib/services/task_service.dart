@@ -374,11 +374,48 @@ class TaskService {
     Map<String, dynamic> taskData,
   ) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/tasks'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode(taskData),
-      );
+      Future<http.Response> sendCreate(Map<String, dynamic> payload) {
+        return http.post(
+          Uri.parse('${ApiConfig.baseUrl}/tasks'),
+          headers: {'Content-Type': 'application/json'},
+          body: jsonEncode(payload),
+        );
+      }
+
+      var response = await sendCreate(taskData);
+
+      // Temporary compatibility fallback for servers that fail when subtasks is an array.
+      if (response.statusCode >= 500) {
+        final hasSubtasks = taskData['subtasks'] is List &&
+            (taskData['subtasks'] as List).isNotEmpty;
+        if (hasSubtasks) {
+          final serverMessage = _errorMessageFromResponse(response).toLowerCase();
+          if (serverMessage.contains('array to string conversion')) {
+            // Some backend versions expect JSON string for subtasks.
+            final retryWithJsonString = <String, dynamic>{
+              ...taskData,
+              'subtasks': jsonEncode(taskData['subtasks']),
+            };
+            response = await sendCreate(retryWithJsonString);
+
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+              await _invalidateTaskCache();
+              return decoded;
+            }
+
+            final retryPayload = <String, dynamic>{...taskData, 'subtasks': null};
+            response = await sendCreate(retryPayload);
+
+            if (response.statusCode == 200 || response.statusCode == 201) {
+              final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+              decoded['subtasks_skipped'] = true;
+              await _invalidateTaskCache();
+              return decoded;
+            }
+          }
+        }
+      }
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body) as Map<String, dynamic>;
@@ -396,7 +433,7 @@ class TaskService {
         }
         throw Exception(message ?? 'Validation failed');
       }
-      throw Exception('Server error: ${response.statusCode}');
+      throw Exception(_errorMessageFromResponse(response));
     } catch (e) {
       throw Exception('Network error: $e');
     }
