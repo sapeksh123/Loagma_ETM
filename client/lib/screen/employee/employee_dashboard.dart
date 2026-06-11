@@ -80,7 +80,7 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
       final response = await TaskService.getTasks(
         widget.userId,
         widget.userRole,
-        includeHistory: false,
+        includeHistory: true,
       );
 
       if (response['status'] == 'success') {
@@ -1960,6 +1960,253 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
     }
   }
 
+  Widget _buildTaskHistoryStrip(Task task) {
+    // Use task history when available; for daily tasks fall back to a synthetic
+    // 7-day window so the strip is always visible.
+    List<DailyStatusEntry>? history = task.taskHistory;
+    if ((history == null || history.isEmpty) && task.category == 'daily') {
+      history = _buildDefaultDailyHistory();
+    }
+    if (history == null || history.isEmpty) return const SizedBox.shrink();
+
+    final nonNullHistory = history;
+    return SizedBox(
+      height: 30,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: nonNullHistory.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (context, index) {
+          final entry = nonNullHistory[index];
+          final color = _getStatusColor(entry.status);
+          final date = entry.date.length >= 10
+              ? entry.date.substring(8, 10)
+              : '';
+          final month = entry.date.length >= 7
+              ? entry.date.substring(5, 7)
+              : '';
+          final label = '$date-$month';
+          final hasNote = entry.note != null && entry.note!.isNotEmpty;
+
+          return GestureDetector(
+            onTap: () {
+              _showHistoryEntryDialog(
+                context: context,
+                title: 'Task history',
+                dateLabel: label,
+                status: entry.status,
+                note: entry.note,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                  if (hasNote) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.sticky_note_2_outlined, size: 12, color: color),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSubtaskHistoryStrip(Task task, int subtaskIndex) {
+    // First try to read history coming from backend; for daily tasks without
+    // history for this index, fall back to a synthetic 7-day window so the
+    // strip is always visible.
+    final map = task.subtaskHistory;
+    List<DailyStatusEntry>? history =
+        (map != null && map.containsKey(subtaskIndex))
+        ? map[subtaskIndex]
+        : null;
+    if ((history == null || history.isEmpty) && task.category == 'daily') {
+      history = _buildDefaultDailyHistory();
+    }
+    if (history == null || history.isEmpty) return const SizedBox.shrink();
+
+    final nonNullHistory = history;
+    return SizedBox(
+      height: 26,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: nonNullHistory.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 4),
+        itemBuilder: (context, index) {
+          final entry = nonNullHistory[index];
+          final color = _getStatusColor(entry.status);
+          final date = entry.date.length >= 10
+              ? entry.date.substring(8, 10)
+              : '';
+          final month = entry.date.length >= 7
+              ? entry.date.substring(5, 7)
+              : '';
+          final label = '$date-$month';
+          final hasNote = entry.note != null && entry.note!.isNotEmpty;
+
+          return GestureDetector(
+            onTap: () {
+              _showHistoryEntryDialog(
+                context: context,
+                title: 'Subtask history',
+                dateLabel: label,
+                status: entry.status,
+                note: entry.note,
+              );
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: color, width: 1),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                  if (hasNote) ...[
+                    const SizedBox(width: 3),
+                    Icon(Icons.circle, size: 8, color: color),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  void _showHistoryEntryDialog({
+    required BuildContext context,
+    required String title,
+    required String dateLabel,
+    required String status,
+    String? note,
+  }) {
+    final color = _getStatusColor(status);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Icon(Icons.history, color: color, size: 22),
+              const SizedBox(width: 8),
+              Text(title),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.calendar_today,
+                    size: 14,
+                    color: Colors.grey.shade700,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    dateLabel,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.circle, size: 10, color: color),
+                  const SizedBox(width: 6),
+                  Text(
+                    status.replaceAll('_', ' ').toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  ),
+                ],
+              ),
+              if (note != null && note.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(
+                  'Status note',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  note,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Build a synthetic rolling 7-day history used when backend history is missing.
+  List<DailyStatusEntry> _buildDefaultDailyHistory() {
+    final now = DateTime.now();
+    final days = <DailyStatusEntry>[];
+    for (int i = 6; i >= 0; i--) {
+      final d = now.subtract(Duration(days: i));
+      final yyyy = d.year.toString().padLeft(4, '0');
+      final mm = d.month.toString().padLeft(2, '0');
+      final dd = d.day.toString().padLeft(2, '0');
+      days.add(
+        DailyStatusEntry(date: '$yyyy-$mm-$dd', status: 'assigned', note: null),
+      );
+    }
+    return days;
+  }
+
   String? _formatCreatedDateLabel(String raw) {
     final value = raw.trim();
     if (value.isEmpty) return null;
@@ -2219,6 +2466,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                     softWrap: true,
                   ),
                 ],
+                if (task.category == 'daily') ...[
+                  const SizedBox(height: 8),
+                  _buildTaskHistoryStrip(task),
+                ],
                 if (task.subtasksWithStatus.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
@@ -2405,6 +2656,10 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                                     ),
                                   ),
                                 ),
+                              ],
+                              if (task.category == 'daily') ...[
+                                const SizedBox(height: 4),
+                                _buildSubtaskHistoryStrip(task, idx),
                               ],
                             ],
                           ),
@@ -2804,10 +3059,18 @@ class _EmployeeDashboardState extends State<EmployeeDashboard> {
                               ),
                             ),
                           ],
+                          if (task.category == 'daily') ...[
+                            const SizedBox(height: 4),
+                            _buildSubtaskHistoryStrip(task, idx),
+                          ],
                         ],
                       ),
                     );
                   }),
+                ],
+                if (task.category == 'daily') ...[
+                  const SizedBox(height: 8),
+                  _buildTaskHistoryStrip(task),
                 ],
                 const SizedBox(height: 12),
                 Wrap(
