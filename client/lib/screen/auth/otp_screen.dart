@@ -13,36 +13,55 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final List<TextEditingController> _otpControllers = List.generate(
-    4,
-    (_) => TextEditingController(),
-  );
+  final List<TextEditingController> _controllers =
+      List.generate(4, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(4, (_) => FocusNode());
   bool _isLoading = false;
-
-  bool get _isOtpComplete =>
-      _otpControllers.every((controller) => controller.text.length == 1);
+  // Tracks whether we've already triggered auto-verify for the current
+  // complete OTP so editing an earlier box doesn't re-fire.
+  String _lastAutoVerifiedOtp = '';
 
   @override
   void dispose() {
-    for (var controller in _otpControllers) {
-      controller.dispose();
+    for (final c in _controllers) {
+      c.dispose();
     }
-    for (var node in _focusNodes) {
-      node.dispose();
+    for (final f in _focusNodes) {
+      f.dispose();
     }
     super.dispose();
   }
 
-  void _verifyOtp() async {
-    final otp = _otpControllers.map((c) => c.text).join();
+  String get _currentOtp => _controllers.map((c) => c.text).join();
 
-    if (otp.length != 4) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter complete 4-digit OTP')),
-      );
-      return;
+  bool get _isComplete => _controllers.every((c) => c.text.length == 1);
+
+  void _clearOtp() {
+    for (final c in _controllers) {
+      c.clear();
     }
+    _lastAutoVerifiedOtp = '';
+    _focusNodes[0].requestFocus();
+  }
+
+  void _showToast(String message, {bool isError = true}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red.shade700 : Colors.green.shade700,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Future<void> _verifyOtp() async {
+    final otp = _currentOtp;
+    if (otp.length != 4 || _isLoading) return;
 
     setState(() => _isLoading = true);
 
@@ -51,11 +70,9 @@ class _OtpScreenState extends State<OtpScreen> {
       final user = await AuthService.verifyOtp(phone, otp);
       await AuthService.saveSession(user);
 
+      if (!mounted) return;
       setState(() => _isLoading = false);
 
-      if (!mounted) return;
-
-      // Navigate based on role
       if (user.role == 'employee') {
         Navigator.pushReplacement(
           context,
@@ -68,7 +85,6 @@ class _OtpScreenState extends State<OtpScreen> {
           ),
         );
       } else {
-        // admin, subadmin, techincharge all use the manager dashboard
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
@@ -81,30 +97,46 @@ class _OtpScreenState extends State<OtpScreen> {
         );
       }
     } catch (e) {
-      setState(() => _isLoading = false);
       if (!mounted) return;
+      setState(() => _isLoading = false);
 
-      var message = e.toString().replaceFirst('Exception: ', '').trim();
+      // Clear fields so user re-enters cleanly instead of re-submitting wrong OTP
+      _clearOtp();
+
+      String message;
       if (e is ApiTimeoutException ||
-          message.toLowerCase().contains('timeout')) {
-        message = 'Network is slow right now. Please try Verify again.';
+          e.toString().toLowerCase().contains('timeout')) {
+        message = 'Network is slow. Please try again.';
       } else if (e is ApiNetworkException ||
-          message.toLowerCase().contains('unable to reach server') ||
-          message.toLowerCase().contains('failed host lookup') ||
-          message.toLowerCase().contains('socket')) {
-        message =
-            'Cannot connect to server right now. Please check your internet and try again.';
-      } else if (message == 'User not found') {
-        message = 'User not found for this phone number.\nPlease contact admin.';
+          e.toString().toLowerCase().contains('unable to reach')) {
+        message = 'Cannot connect to server. Check your internet.';
       } else if (e is ApiServerException && e.statusCode >= 500) {
-        message = 'Server is busy right now. Please try again in a moment.';
-      } else if (message.isEmpty) {
-        message = 'Verification failed. Please try again.';
+        message = 'Server error. Please try again.';
+      } else {
+        // Covers "Wrong OTP", "OTP has expired", "User not found", etc.
+        final raw = e.toString().replaceFirst('Exception: ', '').trim();
+        message = raw.isNotEmpty ? raw : 'Verification failed. Try again.';
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      _showToast(message);
+    }
+  }
+
+  void _onFieldChanged(String value, int index) {
+    if (value.isNotEmpty && index < 3) {
+      _focusNodes[index + 1].requestFocus();
+    } else if (value.isEmpty && index > 0) {
+      _focusNodes[index - 1].requestFocus();
+    }
+
+    if (!_isLoading && _isComplete) {
+      final otp = _currentOtp;
+      // Only auto-verify if this is a NEW complete OTP, not the same one
+      if (otp != _lastAutoVerifiedOtp) {
+        _lastAutoVerifiedOtp = otp;
+        FocusScope.of(context).unfocus();
+        _verifyOtp();
+      }
     }
   }
 
@@ -143,13 +175,11 @@ class _OtpScreenState extends State<OtpScreen> {
                     child: Image.asset(
                       'lib/assets/logo.png',
                       height: 60,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(
-                          Icons.task_alt,
-                          size: 60,
-                          color: Color(0xFFceb56e),
-                        );
-                      },
+                      errorBuilder: (context, error, stack) => const Icon(
+                        Icons.task_alt,
+                        size: 60,
+                        color: Color(0xFFceb56e),
+                      ),
                     ),
                   ),
 
@@ -165,7 +195,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    "Enter the 4-digit code sent to +91 $phone",
+                    "Enter the 4-digit code for +91 $phone",
                     style: const TextStyle(fontSize: 14, color: Colors.white70),
                     textAlign: TextAlign.center,
                   ),
@@ -193,11 +223,12 @@ class _OtpScreenState extends State<OtpScreen> {
                             return SizedBox(
                               width: 55,
                               child: TextField(
-                                controller: _otpControllers[index],
+                                controller: _controllers[index],
                                 focusNode: _focusNodes[index],
                                 textAlign: TextAlign.center,
                                 keyboardType: TextInputType.number,
                                 maxLength: 1,
+                                enabled: !_isLoading,
                                 style: const TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
@@ -218,22 +249,19 @@ class _OtpScreenState extends State<OtpScreen> {
                                       width: 2.5,
                                     ),
                                   ),
+                                  disabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(
+                                      color: Colors.grey.shade300,
+                                      width: 2,
+                                    ),
+                                  ),
                                 ),
                                 inputFormatters: [
                                   FilteringTextInputFormatter.digitsOnly,
                                 ],
-                                onChanged: (value) {
-                                  if (value.isNotEmpty && index < 3) {
-                                    _focusNodes[index + 1].requestFocus();
-                                  } else if (value.isEmpty && index > 0) {
-                                    _focusNodes[index - 1].requestFocus();
-                                  }
-
-                                  if (!_isLoading && _isOtpComplete) {
-                                    FocusScope.of(context).unfocus();
-                                    _verifyOtp();
-                                  }
-                                },
+                                onChanged: (value) =>
+                                    _onFieldChanged(value, index),
                               ),
                             );
                           }),
@@ -272,35 +300,23 @@ class _OtpScreenState extends State<OtpScreen> {
                           ),
                         ),
 
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 12),
 
                         TextButton(
-                          onPressed: () async {
-                            if (!mounted) return;
-                            final phone =
-                                ModalRoute.of(context)!.settings.arguments
-                                    as String;
-                            final scaffoldMessenger = ScaffoldMessenger.of(
-                              context,
-                            );
-
-                            try {
-                              await AuthService.sendOtp(phone);
-                              if (!mounted) return;
-                              scaffoldMessenger.showSnackBar(
-                                const SnackBar(
-                                  content: Text('OTP resent successfully'),
-                                ),
-                              );
-                            } catch (e) {
-                              if (!mounted) return;
-                              scaffoldMessenger.showSnackBar(
-                                SnackBar(
-                                  content: Text('Failed to resend OTP: $e'),
-                                ),
-                              );
-                            }
-                          },
+                          onPressed: _isLoading
+                              ? null
+                              : () async {
+                                  if (!mounted) return;
+                                  try {
+                                    await AuthService.sendOtp(phone);
+                                    _showToast(
+                                      'OTP resent to +91 $phone',
+                                      isError: false,
+                                    );
+                                  } catch (_) {
+                                    _showToast('Failed to resend OTP.');
+                                  }
+                                },
                           child: const Text(
                             'Resend OTP',
                             style: TextStyle(
@@ -309,10 +325,6 @@ class _OtpScreenState extends State<OtpScreen> {
                             ),
                           ),
                         ),
-
-                        const SizedBox(height: 8),
-
-                       
                       ],
                     ),
                   ),

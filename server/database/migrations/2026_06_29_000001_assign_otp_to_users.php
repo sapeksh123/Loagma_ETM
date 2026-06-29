@@ -17,8 +17,8 @@ return new class extends Migration
         $counter = 1;
 
         foreach ($users as $user) {
-            // Create easy OTP: 1111, 2222, 3333, 4444, etc.
-            $otp = str_repeat((string)($counter % 10), 4);
+            // Generate unique random 4-digit OTP for each user
+            $otp = str_pad((string)random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
 
             DB::table('users')
                 ->where('id', $user->id)
