@@ -16,8 +16,6 @@ class AuthService {
     'employee',
   ];
 
-  // Master OTP for all users (4 digits)
-  static const Set<String> masterOtps = {'5555'};
 
   // Admin phone number
   static const String adminPhone = '9999999999';
@@ -109,13 +107,7 @@ class AuthService {
   }
 
   static Future<User> verifyOtp(String phone, String otp) async {
-    // Check if OTP is correct (4-digit master OTP)
-    if (!masterOtps.contains(otp)) {
-      throw Exception('Invalid OTP');
-    }
-
-    // Trigger backend warmup so production cold starts are less likely to
-    // impact the first auth lookup.
+    // Verify OTP via backend endpoint
     final backendWarmup = _warmupBackend();
     unawaited(backendWarmup);
     try {
@@ -124,43 +116,33 @@ class AuthService {
       // Continue to verification even if warmup isn't ready yet.
     }
 
-    dynamic match = _getPrefetchedUser(phone);
-    ApiException? byContactError;
-    ApiException? fallbackError;
+    dynamic match;
+    ApiException? lastError;
 
-    // First try dedicated backend lookup so pagination never blocks valid logins.
-    if (match == null) {
-      try {
-        match = await _getOrFetchUserByContact(phone);
-      } on ApiException catch (e) {
-        byContactError = e;
+    try {
+      final response = await ApiService.post(
+        '/users/verify-otp',
+        {
+          'contactNumber': phone,
+          'otp': otp,
+        },
+        timeout: _authLookupTimeout,
+      );
+
+      if (response['status'] == 'success' && response['data'] != null) {
+        match = Map<String, dynamic>.from(response['data'] as Map);
+      } else {
+        throw Exception(response['message'] ?? 'OTP verification failed');
       }
+    } on ApiException catch (e) {
+      lastError = e;
     }
 
     if (match == null) {
-      try {
-        final fallbackResponse = await _fetchUsersFallback(phone);
-        if (fallbackResponse['status'] != 'success') {
-          throw Exception('Unable to fetch users from server');
-        }
-
-        final List<dynamic> users = fallbackResponse['data'] ?? [];
-        final normalizedInput = normalizePhone(phone);
-
-        match = users.firstWhere(
-          (u) => normalizePhone((u['contactNumber'] ?? '').toString()) ==
-              normalizedInput,
-          orElse: () => null,
-        );
-      } on ApiException catch (e) {
-        fallbackError = e;
-        throw _preferredAuthError(primary: byContactError, secondary: fallbackError);
+      if (lastError != null) {
+        throw lastError;
       }
-    }
-
-    if (match == null) {
-      // User not found in DB, stop login.
-      throw Exception('User not found');
+      throw Exception('OTP verification failed');
     }
 
     final appRole = mapRoleIdToAppRole(match['roleId']?.toString());

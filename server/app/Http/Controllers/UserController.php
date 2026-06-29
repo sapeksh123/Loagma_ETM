@@ -180,4 +180,92 @@ class UserController extends Controller
             ], 500);
         }
     }
+
+    public function verifyOtp(Request $request)
+    {
+        try {
+            $contactNumber = trim((string) $request->input('contactNumber', ''));
+            $otp = trim((string) $request->input('otp', ''));
+
+            if ($contactNumber === '' || $otp === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Contact number and OTP are required',
+                ], 422);
+            }
+
+            $digitsOnly = preg_replace('/\D+/', '', $contactNumber) ?? '';
+            if ($digitsOnly === '') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Invalid contact number',
+                ], 422);
+            }
+
+            $normalizedTen = strlen($digitsOnly) >= 10
+                ? substr($digitsOnly, -10)
+                : $digitsOnly;
+
+            $candidates = array_values(array_unique(array_filter([
+                $contactNumber,
+                $digitsOnly,
+                $normalizedTen,
+                '+91' . $normalizedTen,
+                '91' . $normalizedTen,
+            ])));
+
+            $user = DB::table('users')
+                ->select('id', 'name', 'email', 'contactNumber', 'roleId', 'employeeCode', 'isActive', 'lastLogin', 'otp', 'otpExpiry')
+                ->whereIn('contactNumber', $candidates)
+                ->orderBy('createdAt', 'desc')
+                ->first();
+
+            if (!$user) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            if (!$user->otp) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'No OTP generated for this user',
+                ], 422);
+            }
+
+            if ($user->otp !== $otp) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Wrong OTP',
+                ], 422);
+            }
+
+            if ($user->otpExpiry && strtotime($user->otpExpiry) < time()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'OTP has expired',
+                ], 422);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'contactNumber' => $user->contactNumber,
+                    'roleId' => $user->roleId,
+                    'employeeCode' => $user->employeeCode,
+                    'isActive' => $user->isActive,
+                    'lastLogin' => $user->lastLogin,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

@@ -41,6 +41,7 @@ Route::get('/db-test', function () {
 // User Routes
 Route::get('/users', [UserController::class, 'index']);
 Route::get('/users/by-contact/{contactNumber}', [UserController::class, 'showByContact']);
+Route::post('/users/verify-otp', [UserController::class, 'verifyOtp']);
 Route::get('/roles', [RoleController::class, 'index']);
 Route::get('/departments', [DepartmentController::class, 'index']);
 
