@@ -241,13 +241,6 @@ class UserController extends Controller
                 ], 422);
             }
 
-            if ($user->otpExpiry && strtotime($user->otpExpiry) < time()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'OTP has expired',
-                ], 422);
-            }
-
             return response()->json([
                 'status' => 'success',
                 'data' => [
