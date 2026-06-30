@@ -104,9 +104,17 @@ class _NotepadScreenState extends State<NotepadScreen> {
         _isLoading = false;
         _isSaved = true;
       });
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _isLoading = false);
+      if (widget.initialNote == null) {
+        // Only show error if we had nothing to display at all
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '').trim()),
+          backgroundColor: Colors.red.shade700,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
     }
   }
 

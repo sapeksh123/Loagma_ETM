@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -6,6 +7,7 @@ import 'api_config.dart';
 import '../models/note_model.dart';
 
 class NoteService {
+  static const Duration _timeout = Duration(seconds: 20);
   static const Duration _notesCacheTtl = Duration(seconds: 45);
   static final Map<String, _NotesCacheEntry> _notesCache = {};
 
@@ -18,6 +20,12 @@ class NoteService {
       'X-User-Id': userId,
       'X-User-Role': userRole,
     };
+  }
+
+  static String _errorMessage(Object e) {
+    if (e is TimeoutException) return 'Request timed out. Please try again.';
+    final s = e.toString().replaceFirst('Exception: ', '').trim();
+    return s.isNotEmpty ? s : 'Unknown error';
   }
 
   static Future<List<Note>> listNotes(
@@ -35,10 +43,9 @@ class NoteService {
 
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/notes');
-      final response = await http.get(
-        uri,
-        headers: _headers(userId: userId, userRole: userRole),
-      );
+      final response = await http
+          .get(uri, headers: _headers(userId: userId, userRole: userRole))
+          .timeout(_timeout);
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -57,7 +64,7 @@ class NoteService {
       }
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw Exception(_errorMessage(e));
     }
   }
 
@@ -74,10 +81,9 @@ class NoteService {
       final uri = Uri.parse(
         '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}',
       );
-      final response = await http.get(
-        uri,
-        headers: _headers(userId: userId, userRole: userRole),
-      );
+      final response = await http
+          .get(uri, headers: _headers(userId: userId, userRole: userRole))
+          .timeout(_timeout);
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -87,12 +93,10 @@ class NoteService {
         }
         throw Exception(body['message']?.toString() ?? 'Failed to load note');
       }
-      if (response.statusCode == 404) {
-        throw Exception('Note not found');
-      }
+      if (response.statusCode == 404) throw Exception('Note not found');
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw Exception(_errorMessage(e));
     }
   }
 
@@ -110,11 +114,11 @@ class NoteService {
         'title': title,
         if (content != null) 'content': content,
       });
-      final response = await http.post(
-        uri,
-        headers: _headers(userId: userId, userRole: userRole),
-        body: payload,
-      );
+      final response = await http
+          .post(uri,
+              headers: _headers(userId: userId, userRole: userRole),
+              body: payload)
+          .timeout(_timeout);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
@@ -126,7 +130,7 @@ class NoteService {
       }
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw Exception(_errorMessage(e));
     }
   }
 
@@ -147,23 +151,21 @@ class NoteService {
       if (title != null) payload['title'] = title;
       if (content != null) payload['content'] = content;
 
-      final response = await http.put(
-        uri,
-        headers: _headers(userId: userId, userRole: userRole),
-        body: jsonEncode(payload),
-      );
+      final response = await http
+          .put(uri,
+              headers: _headers(userId: userId, userRole: userRole),
+              body: jsonEncode(payload))
+          .timeout(_timeout);
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['status'] == 'success') return;
         throw Exception(body['message']?.toString() ?? 'Failed to update note');
       }
-      if (response.statusCode == 404) {
-        throw Exception('Note not found');
-      }
+      if (response.statusCode == 404) throw Exception('Note not found');
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw Exception(_errorMessage(e));
     }
   }
 
@@ -176,50 +178,41 @@ class NoteService {
       final uri = Uri.parse(
         '${ApiConfig.baseUrl}/notes/${Uri.encodeComponent(noteId)}',
       );
-      final response = await http.delete(
-        uri,
-        headers: _headers(userId: userId, userRole: userRole),
-      );
+      final response = await http
+          .delete(uri, headers: _headers(userId: userId, userRole: userRole))
+          .timeout(_timeout);
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['status'] == 'success') return;
         throw Exception(body['message']?.toString() ?? 'Failed to delete note');
       }
-      if (response.statusCode == 404) {
-        throw Exception('Note not found');
-      }
+      if (response.statusCode == 404) throw Exception('Note not found');
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw Exception(_errorMessage(e));
     }
   }
 
   static Future<String> getMyNote(String userId, String userRole) async {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/notes/me');
-      final response = await http.get(
-        uri,
-        headers: _headers(userId: userId, userRole: userRole),
-      );
+      final response = await http
+          .get(uri, headers: _headers(userId: userId, userRole: userRole))
+          .timeout(_timeout);
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
         if (body['status'] == 'success') {
           final data = body['data'] as Map<String, dynamic>? ?? {};
-          final content = data['content'];
-          return content?.toString() ?? '';
+          return data['content']?.toString() ?? '';
         }
         throw Exception(body['message']?.toString() ?? 'Failed to load note');
       }
-
-      if (response.statusCode == 404) {
-        return '';
-      }
-
+      if (response.statusCode == 404) return '';
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw Exception(_errorMessage(e));
     }
   }
 
@@ -230,26 +223,20 @@ class NoteService {
   ) async {
     try {
       final uri = Uri.parse('${ApiConfig.baseUrl}/notes/me');
-      final payload = jsonEncode({
-        'content': content,
-      });
-      final response = await http.put(
-        uri,
-        headers: _headers(userId: userId, userRole: userRole),
-        body: payload,
-      );
+      final response = await http
+          .put(uri,
+              headers: _headers(userId: userId, userRole: userRole),
+              body: jsonEncode({'content': content}))
+          .timeout(_timeout);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final body = jsonDecode(response.body) as Map<String, dynamic>;
-        if (body['status'] == 'success') {
-          return;
-        }
+        if (body['status'] == 'success') return;
         throw Exception(body['message']?.toString() ?? 'Failed to save note');
       }
-
       throw Exception('Server error: ${response.statusCode}');
     } catch (e) {
-      throw Exception('Network error: $e');
+      throw Exception(_errorMessage(e));
     }
   }
 }
@@ -258,9 +245,5 @@ class _NotesCacheEntry {
   final List<Note> notes;
   final DateTime fetchedAt;
 
-  _NotesCacheEntry({
-    required this.notes,
-    required this.fetchedAt,
-  });
+  _NotesCacheEntry({required this.notes, required this.fetchedAt});
 }
-
