@@ -37,6 +37,7 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
   final Map<String, bool> _expandedFolders = {};
   bool _isLoading = true;
   String? _errorMessage;
+  String? _loadingHint;
 
   @override
   void initState() {
@@ -74,27 +75,40 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
     setState(() {
       _isLoading = true;
       _errorMessage = null;
+      _loadingHint = null;
     });
-    try {
-      final list = await NoteService.listNotes(
-        widget.userId,
-        widget.userRole,
-        forceRefresh: forceRefresh,
-      );
-      final grouped = _groupNotesByFolder(list);
-      if (!mounted) return;
-      setState(() {
-        _notes = list;
-        _syncExpandedFolders(grouped);
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _errorMessage = e.toString().replaceFirst('Exception: ', '').trim();
-        _isLoading = false;
-      });
+
+    Exception? lastError;
+    for (int attempt = 1; attempt <= 3; attempt++) {
+      try {
+        final list = await NoteService.listNotes(
+          widget.userId,
+          widget.userRole,
+          forceRefresh: forceRefresh,
+        );
+        if (!mounted) return;
+        final grouped = _groupNotesByFolder(list);
+        setState(() {
+          _notes = list;
+          _syncExpandedFolders(grouped);
+          _isLoading = false;
+          _loadingHint = null;
+        });
+        return;
+      } catch (e) {
+        lastError = e is Exception ? e : Exception(e.toString());
+        final isTimeout = e.toString().toLowerCase().contains('timed out');
+        if (!isTimeout || attempt >= 3) break;
+        if (mounted) setState(() => _loadingHint = 'Server warming up…');
+      }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _errorMessage = lastError.toString().replaceFirst('Exception: ', '').trim();
+      _isLoading = false;
+      _loadingHint = null;
+    });
   }
 
   Map<String, List<Note>> _groupNotesByFolder(List<Note> notes) {
@@ -443,7 +457,21 @@ class _NotepadListScreenState extends State<NotepadListScreen> {
       return Scaffold(
         appBar: appBar,
         backgroundColor: _pageBg,
-        body: const Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const CircularProgressIndicator(),
+              if (_loadingHint != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _loadingHint!,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                ),
+              ],
+            ],
+          ),
+        ),
       );
     }
 
